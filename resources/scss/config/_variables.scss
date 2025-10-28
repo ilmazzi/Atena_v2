@@ -35,20 +35,20 @@ $black:    #000000;
 
 
 // scss-docs-start color-variables
-$blue:    #1c84ee;
-$indigo:  #53389f;
-$purple:  #7f56da;
-$pink:    #ff86c8;
-$red:     #ef5f5f;
-$orange:  #ff6c2f;
-$yellow:  #f9b931;
-$green:   #22c55e;
-$teal:    #040505;
-$cyan:    #4ecac2;
+$blue:    #1d7aed;   // blu fresco, accostamento pulito con il verde
+$indigo:  #4a2f91;   // indaco profondo, per contrasti forti
+$purple:  #2E0219;   // viola vivace, armonico con l’indaco
+$pink:    #FCB0B3;   // rosa acceso ma leggero
+$red:     #a44a3f;   // rosso vivo, contrasto deciso col verde
+$orange:  #f97316;   // arancio caldo e saturo, supporto al primary
+$yellow:  #facc15;   // giallo luminoso, vicino al verde lime
+$green:   #a2be1a;   // 👉 nuovo primary
+$teal:    #4A6C6F;   // teal moderno, ottimo per stati/info
+$cyan:    #b8dbd9;   // ciano brillante, accostamento fresco
 // scss-docs-end color-variables
 
 // scss-docs-start theme-color-variables
-$primary:       $orange;
+$primary:       $green;
 $secondary:     $gray-600;
 $blue:          $blue;
 $indigo:        $indigo;

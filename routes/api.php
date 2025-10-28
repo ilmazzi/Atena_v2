@@ -7,13 +7,24 @@ use Illuminate\Support\Facades\Route;
 |--------------------------------------------------------------------------
 | API Routes
 |--------------------------------------------------------------------------
-|
-| Here is where you can register API routes for your application. These
-| routes are loaded by the RouteServiceProvider and all of them will
-| be assigned to the "api" middleware group. Make something great!
-|
 */
 
-Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
-    return $request->user();
-});
+// Rinnovo sessione - usa solo middleware web per sessioni normali
+Route::post('/renew-session', function (Request $request) {
+    // Verifica che l'utente sia autenticato
+    if (!auth()->check()) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Utente non autenticato',
+        ], 401);
+    }
+    
+    // Rigenera la sessione per rinnovarla
+    $request->session()->regenerate();
+    
+    return response()->json([
+        'success' => true,
+        'message' => 'Sessione rinnovata',
+        'expires_at' => now()->addMinutes(config('session.lifetime'))->toIso8601String(),
+    ]);
+})->middleware(['web', 'auth'])->name('api.renew-session');

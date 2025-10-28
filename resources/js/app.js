@@ -20,6 +20,9 @@ import ClipboardJS from 'clipboard';
 import Gumshoe from 'gumshoejs/dist/gumshoe'
 import Toastify from 'toastify-js'
 import Choices from 'choices.js';
+import Swal from 'sweetalert2';
+
+window.Swal = Swal;
 
 import 'iconify-icon';
 import 'simplebar'

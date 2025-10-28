@@ -111,6 +111,19 @@ return [
             // 'encrypt' => env('DB_ENCRYPT', 'yes'),
             // 'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'false'),
         ],
+        
+        'mssql_prod' => [
+            'driver' => 'sqlsrv',
+            'host' => env('MSSQL_PROD_HOST', 'localhost'),
+            // Porta opzionale - lasciare vuoto per Named Instance (es: marte\SQLEXPRESS)
+            'port' => env('MSSQL_PROD_PORT', ''),
+            'database' => env('MSSQL_PROD_DATABASE', 'athena'),
+            'username' => env('MSSQL_PROD_USERNAME'),
+            'password' => env('MSSQL_PROD_PASSWORD'),
+            'charset' => 'utf8',
+            'prefix' => '',
+            'prefix_indexes' => true,
+        ],
 
     ],
 
