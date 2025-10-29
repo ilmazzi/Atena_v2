@@ -189,6 +189,14 @@ class ContoDeposito extends Model
     }
     
     /**
+     * Fatture di vendita associate al deposito
+     */
+    public function fattureVendita()
+    {
+        return $this->hasMany(\App\Models\FatturaVendita::class, 'conto_deposito_id');
+    }
+    
+    /**
      * Articoli attualmente nel deposito
      */
     public function articoli(): HasMany

@@ -24,14 +24,15 @@ class Fattura extends Model
         'anno',
         'data_documento',
         'fornitore_id',
-        'magazzino_id',
+        'magazzino_destinazione_id',
+        'magazzino_id', // Legacy
         'stato',
         'data_carico',
-        'allegato_path',
-        'importo_totale',
+        'allegato_path', // Legacy
+        'totale', // Campo corretto per totale fattura
+        'imponibile', // Totale senza IVA
         'iva',
         'note',
-        'user_carico_id',
         'tipo_carico',
         'ocr_document_id',
         'sede_id',
@@ -45,7 +46,8 @@ class Fattura extends Model
         'data_documento' => 'date',
         'data_carico' => 'datetime',
         'anno' => 'integer',
-        'importo_totale' => 'decimal:2',
+        'totale' => 'decimal:2',
+        'imponibile' => 'decimal:2',
         'iva' => 'decimal:2',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',

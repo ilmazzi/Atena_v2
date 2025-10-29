@@ -1,4 +1,21 @@
 <div>
+    {{-- Messaggi Successo/Errore --}}
+    @if (session()->has('success'))
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <iconify-icon icon="solar:check-circle-bold" class="me-2"></iconify-icon>
+            {!! session('success') !!}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    @endif
+
+    @if (session()->has('error'))
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <iconify-icon icon="solar:danger-circle-bold" class="me-2"></iconify-icon>
+            {{ session('error') }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    @endif
+
     {{-- Header --}}
     <div class="row mb-4">
         <div class="col-12">
@@ -29,25 +46,51 @@
                         @endif
                         
                         @if($deposito->ddt_invio_id)
-                            <a href="{{ route('ddt-deposito.stampa', $deposito->ddt_invio_id) }}" class="btn btn-info" target="_blank">
-                                <iconify-icon icon="solar:printer-bold" class="me-1"></iconify-icon>
-                                Stampa DDT Invio
+                            <a href="{{ route('ddt-deposito.show', $deposito->ddt_invio_id) }}" class="btn btn-info">
+                                <iconify-icon icon="solar:eye-bold" class="me-1"></iconify-icon>
+                                Vedi DDT Invio
                             </a>
                         @endif
                     @endif
                     
-                    @if((($deposito->stato === 'attivo' && $deposito->isScaduto()) || ($deposito->articoli_rientrati > 0 && !$deposito->ddt_reso_id)))
-                        <button class="btn btn-warning" wire:click="generaDdtReso">
-                            <iconify-icon icon="solar:import-bold" class="me-1"></iconify-icon>
-                            Genera DDT Reso
-                        </button>
+                    @if((($deposito->stato !== 'chiuso' && $deposito->isScaduto()) || ($deposito->articoli_rientrati > 0)))
+                        @php
+                            // Verifica se ci sono movimenti reso senza DDT
+                            $movimentiReso = $deposito->movimenti()->where('tipo_movimento', 'reso')->get();
+                            $ddtResi = $deposito->ddtResi;
+                            $haMovimentiSenzaDdt = false;
+                            
+                            if ($movimentiReso->count() > 0) {
+                                // Conta movimenti già in DDT
+                                $movimentiInDdt = 0;
+                                foreach ($ddtResi as $ddt) {
+                                    $movimentiInDdt += $ddt->dettagli->count();
+                                }
+                                // Se ci sono più movimenti reso che dettagli DDT, alcuni non sono in DDT
+                                $haMovimentiSenzaDdt = $movimentiReso->count() > $movimentiInDdt;
+                            }
+                        @endphp
+                        
+                        @if($haMovimentiSenzaDdt || $deposito->isScaduto())
+                            <button class="btn btn-warning" wire:click="apriGeneraDdtResoModal">
+                                <iconify-icon icon="solar:document-add-bold" class="me-1"></iconify-icon>
+                                Genera DDT Reso
+                                @if($haMovimentiSenzaDdt)
+                                    <span class="badge bg-light text-warning ms-1">{{ $movimentiReso->count() - $movimentiInDdt }}</span>
+                                @endif
+                            </button>
+                        @endif
                     @endif
                     
-                    @if($deposito->ddt_reso_id)
-                        <a href="{{ route('ddt-deposito.stampa', $deposito->ddt_reso_id) }}" class="btn btn-info" target="_blank">
-                            <iconify-icon icon="solar:printer-bold" class="me-1"></iconify-icon>
-                            Stampa DDT Reso
-                        </a>
+                    @if($deposito->ddtResi->count() > 0)
+                        <div class="btn-group">
+                            @foreach($deposito->ddtResi as $ddtReso)
+                                <a href="{{ route('ddt-deposito.show', $ddtReso->id) }}" class="btn btn-info btn-sm" title="Vedi DDT {{ $ddtReso->numero }}">
+                                    <iconify-icon icon="solar:eye-bold" class="me-1"></iconify-icon>
+                                    DDT {{ $ddtReso->numero }}
+                                </a>
+                            @endforeach
+                        </div>
                     @endif
                 </div>
             </div>
@@ -82,17 +125,19 @@
                             
                             @if($deposito->ddt_invio_id)
                                 <p><strong>DDT Invio:</strong> 
-                                    <a href="{{ route('ddt-deposito.stampa', $deposito->ddt_invio_id) }}" class="text-primary" target="_blank">
+                                    <a href="{{ route('ddt-deposito.show', $deposito->ddt_invio_id) }}" class="text-primary">
                                         {{ $deposito->ddtInvio->numero ?? 'N/A' }}
                                     </a>
                                 </p>
                             @endif
                             
-                            @if($deposito->ddt_reso_id)
-                                <p><strong>DDT Reso:</strong> 
-                                    <a href="{{ route('ddt-deposito.stampa', $deposito->ddt_reso_id) }}" class="text-primary" target="_blank">
-                                        {{ $deposito->ddtReso->numero ?? 'N/A' }}
-                                    </a>
+                            @if($deposito->ddtResi->count() > 0)
+                                <p><strong>DDT Reso ({{ $deposito->ddtResi->count() }}):</strong><br>
+                                    @foreach($deposito->ddtResi as $ddtReso)
+                                        <a href="{{ route('ddt-deposito.show', $ddtReso->id) }}" class="text-primary">
+                                            {{ $ddtReso->numero }}
+                                        </a>@if(!$loop->last), @endif
+                                    @endforeach
                                 </p>
                             @endif
                             
@@ -154,33 +199,36 @@
                             <span class="badge bg-light-primary text-primary p-2 d-inline-flex align-items-center gap-1">
                                 <iconify-icon icon="solar:export-bold"></iconify-icon>
                                 Invio: 
-                                <a href="{{ route('ddt-deposito.stampa', $deposito->ddt_invio_id) }}" 
-                                   class="text-primary fw-bold" target="_blank">
+                                <a href="{{ route('ddt-deposito.show', $deposito->ddt_invio_id) }}" 
+                                   class="text-primary fw-bold">
                                     {{ $deposito->ddtInvio->numero ?? 'N/A' }}
                                 </a>
                             </span>
                         @endif
-                        @if($deposito->ddt_reso_id)
-                            <span class="badge bg-light-warning text-warning p-2 d-inline-flex align-items-center gap-1">
-                                <iconify-icon icon="solar:import-bold"></iconify-icon>
-                                Reso: 
-                                <a href="{{ route('ddt-deposito.stampa', $deposito->ddt_reso_id) }}" 
-                                   class="text-warning fw-bold" target="_blank">
-                                    {{ $deposito->ddtReso->numero ?? 'N/A' }}
-                                </a>
-                            </span>
+                        @if($deposito->ddtResi->count() > 0)
+                            @foreach($deposito->ddtResi as $ddtReso)
+                                <span class="badge bg-light-warning text-warning p-2 d-inline-flex align-items-center gap-1">
+                                    <iconify-icon icon="solar:import-bold"></iconify-icon>
+                                    Reso {{ $loop->iteration }}: 
+                                    <a href="{{ route('ddt-deposito.show', $ddtReso->id) }}" 
+                                       class="text-warning fw-bold"
+                                       title="DDT Reso creato il {{ $ddtReso->created_at->format('d/m/Y H:i') }}">
+                                        {{ $ddtReso->numero }}
+                                    </a>
+                                </span>
+                            @endforeach
                         @endif
                         @if($deposito->ddt_rimando_id)
                             <span class="badge bg-light-success text-success p-2 d-inline-flex align-items-center gap-1">
                                 <iconify-icon icon="solar:refresh-bold"></iconify-icon>
                                 Rimando: 
-                                <a href="{{ route('ddt-deposito.stampa', $deposito->ddt_rimando_id) }}" 
-                                   class="text-success fw-bold" target="_blank">
+                                <a href="{{ route('ddt-deposito.show', $deposito->ddt_rimando_id) }}" 
+                                   class="text-success fw-bold">
                                     {{ $deposito->ddtRimando->numero ?? 'N/A' }}
                                 </a>
                             </span>
                         @endif
-                        @if(!$deposito->ddt_invio_id && !$deposito->ddt_reso_id && !$deposito->ddt_rimando_id)
+                        @if(!$deposito->ddt_invio_id && $deposito->ddtResi->count() == 0 && !$deposito->ddt_rimando_id)
                             <span class="text-muted small">Nessun DDT generato</span>
                         @endif
                     </div>
@@ -189,13 +237,45 @@
         </div>
     </div>
 
+    {{-- Sezione Fatture di Vendita --}}
+    @if($deposito->fattureVendita && $deposito->fattureVendita->count() > 0)
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="card-title mb-0">
+                            <iconify-icon icon="solar:bill-list-bold" class="me-2"></iconify-icon>
+                            Fatture di Vendita
+                        </h6>
+                    </div>
+                    <div class="card-body py-2">
+                        <div class="d-flex flex-wrap gap-2 align-items-center">
+                            @foreach($deposito->fattureVendita->sortByDesc('data_documento') as $fattura)
+                                <span class="badge bg-light-success text-success p-2 d-inline-flex align-items-center gap-1">
+                                    <iconify-icon icon="solar:document-text-bold"></iconify-icon>
+                                    Fattura: 
+                                    <a href="{{ route('fatture-vendita.show', $fattura->id) }}" 
+                                       class="text-success fw-bold">
+                                        {{ $fattura->numero }}
+                                    </a>
+                                    <span class="text-muted ms-1">({{ $fattura->data_documento->format('d/m/Y') }})</span>
+                                    <span class="text-dark ms-1">| €{{ number_format($fattura->totale, 2, ',', '.') }}</span>
+                                </span>
+                            @endforeach
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endif
+
     {{-- Articoli in Deposito --}}
     <div class="row">
         <div class="col-12">
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="card-title mb-0">Articoli in Deposito</h5>
-                    @if($deposito->stato === 'attivo' && ($articoliInDeposito->count() > 0 || $prodottiFinitiInDeposito->count() > 0))
+                    @if($deposito->stato !== 'chiuso' && ($articoliInDeposito->count() > 0 || $prodottiFinitiInDeposito->count() > 0))
                         <div class="btn-group">
                             <button class="btn btn-warning btn-sm" wire:click="apriResoManualeModal">
                                 <iconify-icon icon="solar:import-bold" class="me-1"></iconify-icon>
@@ -220,7 +300,7 @@
                             <table class="table table-hover align-middle">
                                 <thead class="table-light">
                                     <tr>
-                                        @if($deposito->stato === 'attivo')
+                                        @if($deposito->stato !== 'chiuso')
                                             <th width="30" title="Seleziona per reso">
                                                 <iconify-icon icon="solar:import-bold" class="text-warning small"></iconify-icon>
                                             </th>
@@ -241,7 +321,7 @@
                                     {{-- Articoli --}}
                                     @foreach($articoliInDeposito as $articoloData)
                                         <tr>
-                                            @if($deposito->stato === 'attivo')
+                                            @if($deposito->stato !== 'chiuso')
                                                 <td class="text-center">
                                                     <input type="checkbox" 
                                                            class="form-check-input" 
@@ -266,7 +346,7 @@
                                             <td>€{{ number_format($articoloData['costo_unitario'], 2, ',', '.') }}</td>
                                             <td>€{{ number_format($articoloData['costo_unitario'] * $articoloData['quantita'], 2, ',', '.') }}</td>
                                             <td class="text-center">
-                                                @if($deposito->stato === 'attivo')
+                                                @if($deposito->stato !== 'chiuso')
                                                     <button class="btn btn-success btn-sm" 
                                                             wire:click="apriRegistraVenditaModal('articolo', {{ $articoloData['articolo']->id }})"
                                                             title="Registra vendita">
@@ -280,7 +360,7 @@
                                     {{-- Prodotti Finiti --}}
                                     @foreach($prodottiFinitiInDeposito as $pfData)
                                         <tr>
-                                            @if($deposito->stato === 'attivo')
+                                            @if($deposito->stato !== 'chiuso')
                                                 <td class="text-center">
                                                     <input type="checkbox" 
                                                            class="form-check-input" 
@@ -316,7 +396,7 @@
                                                             <small>{{ $pfData['componenti']->count() }}</small>
                                                         </button>
                                                     @endif
-                                                    @if($deposito->stato === 'attivo')
+                                                    @if($deposito->stato !== 'chiuso')
                                                         <button class="btn btn-success btn-sm" 
                                                                 wire:click="apriRegistraVenditaModal('prodotto_finito', {{ $pfData['prodotto_finito']->id }})"
                                                                 title="Registra vendita">
@@ -330,7 +410,7 @@
                                         {{-- Riga espandibile con componenti --}}
                                         @if($pfData['componenti']->count() > 0)
                                             <tr class="collapse" id="componenti-{{ $pfData['prodotto_finito']->id }}">
-                                                <td colspan="{{ $deposito->stato === 'attivo' ? '8' : '7' }}" class="p-0 border-0">
+                                                <td colspan="{{ $deposito->stato !== 'chiuso' ? '8' : '7' }}" class="p-0 border-0">
                                                     <div class="bg-light-warning p-3 mx-3 mb-2 rounded">
                                                         <h6 class="text-warning mb-2">
                                                             <iconify-icon icon="solar:settings-bold" class="me-1"></iconify-icon>
@@ -570,15 +650,16 @@
 
     {{-- Modal Registra Vendita --}}
     @if($showRegistraVenditaModal && $itemVendita)
-        <div class="modal fade show" style="display: block;" tabindex="-1">
-            <div class="modal-dialog">
+        <div class="modal fade show d-block" style="z-index: 1055;" tabindex="-1" role="dialog" aria-modal="true">
+            <div class="modal-backdrop fade show" style="z-index: 1040; pointer-events: none;"></div>
+            <div class="modal-dialog modal-dialog-centered" style="z-index: 1056;">
                 <div class="modal-content">
                     <div class="modal-header">
                         <h5 class="modal-title">
                             <iconify-icon icon="solar:cart-check-bold-duotone" class="me-2"></iconify-icon>
                             Registra Vendita
                         </h5>
-                        <button type="button" wire:click="chiudiRegistraVenditaModal" class="btn-close"></button>
+                        <button type="button" wire:click="chiudiRegistraVenditaModal" class="btn-close" aria-label="Close"></button>
                     </div>
                     <div class="modal-body">
                         <div class="mb-3">
@@ -586,8 +667,8 @@
                             <div class="p-3 bg-light rounded">
                                 <div class="d-flex justify-content-between align-items-center">
                                     <div>
-                                        <span class="fw-bold text-primary">{{ $itemVendita['item']->codice }}</span>
-                                        <p class="mb-0 small text-muted">{{ $itemVendita['item']->descrizione }}</p>
+                                        <span class="fw-bold text-primary">{{ $itemVendita['item_codice'] ?? 'N/A' }}</span>
+                                        <p class="mb-0 small text-muted">{{ $itemVendita['item_descrizione'] ?? '' }}</p>
                                     </div>
                                     <span class="badge bg-light-{{ $itemVendita['tipo'] === 'articolo' ? 'primary' : 'warning' }} text-{{ $itemVendita['tipo'] === 'articolo' ? 'primary' : 'warning' }}">
                                         {{ $itemVendita['tipo'] === 'articolo' ? 'Articolo' : 'PF' }}
@@ -613,20 +694,128 @@
                             <strong>Costo unitario:</strong> €{{ number_format($itemVendita['costo_unitario'], 2, ',', '.') }}<br>
                             <strong>Totale vendita:</strong> €{{ number_format($itemVendita['costo_unitario'] * $quantitaVendita, 2, ',', '.') }}
                         </div>
+
+                        <hr class="my-4">
+                        
+                        <h6 class="fw-bold mb-3">
+                            <iconify-icon icon="solar:document-bold" class="me-2"></iconify-icon>
+                            Dati Fattura di Vendita *
+                        </h6>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-semibold">Numero Fattura *</label>
+                                <input type="text" class="form-control @error('numeroFattura') is-invalid @enderror" 
+                                       wire:model="numeroFattura"
+                                       placeholder="Es: FV-2025-001">
+                                @error('numeroFattura')
+                                    <div class="invalid-feedback">{{ $message }}</div>
+                                @enderror
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-semibold">Data Fattura *</label>
+                                <input type="date" class="form-control @error('dataFattura') is-invalid @enderror" 
+                                       wire:model="dataFattura">
+                                @error('dataFattura')
+                                    <div class="invalid-feedback">{{ $message }}</div>
+                                @enderror
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-semibold">Nome Cliente *</label>
+                                <input type="text" class="form-control @error('clienteNome') is-invalid @enderror" 
+                                       wire:model="clienteNome">
+                                @error('clienteNome')
+                                    <div class="invalid-feedback">{{ $message }}</div>
+                                @enderror
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-semibold">Cognome Cliente *</label>
+                                <input type="text" class="form-control @error('clienteCognome') is-invalid @enderror" 
+                                       wire:model="clienteCognome">
+                                @error('clienteCognome')
+                                    <div class="invalid-feedback">{{ $message }}</div>
+                                @enderror
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-semibold">Telefono Cliente</label>
+                                <input type="text" class="form-control @error('clienteTelefono') is-invalid @enderror" 
+                                       wire:model="clienteTelefono">
+                                @error('clienteTelefono')
+                                    <div class="invalid-feedback">{{ $message }}</div>
+                                @enderror
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-semibold">Email Cliente</label>
+                                <input type="email" class="form-control @error('clienteEmail') is-invalid @enderror" 
+                                       wire:model="clienteEmail">
+                                @error('clienteEmail')
+                                    <div class="invalid-feedback">{{ $message }}</div>
+                                @enderror
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Importo Totale Fattura (€) *</label>
+                            <input type="number" step="0.01" class="form-control @error('importoTotaleFattura') is-invalid @enderror" 
+                                   wire:model.live="importoTotaleFattura"
+                                   min="0.01"
+                                   required>
+                            <div class="form-text">
+                                <span class="text-info">
+                                    <iconify-icon icon="solar:calculator-bold" class="me-1"></iconify-icon>
+                                    Calcolato da: €{{ number_format($itemVendita['costo_unitario'] ?? 0, 2, ',', '.') }} × {{ $quantitaVendita ?? 1 }} = 
+                                    <strong>€{{ number_format(($itemVendita['costo_unitario'] ?? 0) * ($quantitaVendita ?? 1), 2, ',', '.') }}</strong>
+                                </span>
+                            </div>
+                            @error('importoTotaleFattura')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Note Fattura</label>
+                            <textarea class="form-control @error('noteFattura') is-invalid @enderror" 
+                                      wire:model="noteFattura"
+                                      rows="2"
+                                      placeholder="Note aggiuntive sulla fattura..."></textarea>
+                            @error('noteFattura')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" wire:click="chiudiRegistraVenditaModal">
+                        <button type="button" 
+                                class="btn btn-secondary" 
+                                wire:click="chiudiRegistraVenditaModal">
                             Annulla
                         </button>
-                        <button type="button" class="btn btn-success" wire:click="registraVendita">
+                        <button type="button" 
+                                class="btn btn-success" 
+                                wire:click="registraVendita"
+                                wire:loading.attr="disabled"
+                                wire:target="registraVendita">
                             <iconify-icon icon="solar:cart-check-bold" class="me-1"></iconify-icon>
-                            Registra Vendita
+                            <span wire:loading.remove wire:target="registraVendita">
+                                Registra Vendita
+                            </span>
+                            <span wire:loading wire:target="registraVendita">
+                                <span class="spinner-border spinner-border-sm me-2"></span>
+                                Registrazione in corso...
+                            </span>
                         </button>
                     </div>
                 </div>
             </div>
         </div>
-        <div class="modal-backdrop fade show"></div>
     @endif
 
     {{-- Modal Vendita Multipla --}}
@@ -919,6 +1108,168 @@
                             <iconify-icon icon="solar:import-bold" class="me-1"></iconify-icon>
                             Conferma Reso
                         </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-backdrop fade show"></div>
+    @endif
+
+    {{-- Modal Genera DDT Reso con Anteprima --}}
+    @if($showGeneraDdtResoModal)
+        <div class="modal fade show" style="display: block;" tabindex="-1">
+            <div class="modal-dialog modal-xl">
+                <div class="modal-content">
+                    <div class="modal-header bg-warning text-dark">
+                        <h5 class="modal-title">
+                            <iconify-icon icon="solar:document-add-bold-duotone" class="me-2"></iconify-icon>
+                            Genera DDT di Reso - Anteprima
+                        </h5>
+                        <button type="button" wire:click="chiudiGeneraDdtResoModal" class="btn-close"></button>
+                    </div>
+                    <div class="modal-body">
+                        {{-- Info Box --}}
+                        <div class="alert alert-info">
+                            <iconify-icon icon="solar:info-circle-bold" class="me-2"></iconify-icon>
+                            <strong>Come funziona:</strong>
+                            <ol class="mb-0 mt-2">
+                                <li>Seleziona gli articoli da restituire (reso manuale)</li>
+                                <li>Esamina l'anteprima qui sotto</li>
+                                <li>Genera il DDT di reso</li>
+                                <li>Stampa e spedisci</li>
+                            </ol>
+                        </div>
+
+                        @php
+                            $movimentiDisponibili = $this->anteprimaMovimentiReso;
+                        @endphp
+
+                        @if($movimentiDisponibili->isEmpty())
+                            <div class="alert alert-warning text-center">
+                                <iconify-icon icon="solar:info-circle-bold" class="me-2 fs-4"></iconify-icon>
+                                <strong>Nessun movimento di reso disponibile</strong><br>
+                                <small>Tutti i movimenti di reso sono già stati inclusi in DDT precedenti.</small>
+                            </div>
+                        @else
+                            {{-- DDT Reso esistenti --}}
+                            @if($deposito->ddtResi->count() > 0)
+                                <div class="mb-3">
+                                    <h6 class="text-warning">
+                                        <iconify-icon icon="solar:document-text-bold" class="me-1"></iconify-icon>
+                                        DDT Reso già generati ({{ $deposito->ddtResi->count() }})
+                                    </h6>
+                                    <div class="d-flex flex-wrap gap-2">
+                                        @foreach($deposito->ddtResi as $ddtReso)
+                                            <span class="badge bg-light-warning text-warning p-2">
+                                                <iconify-icon icon="solar:document-bold"></iconify-icon>
+                                                {{ $ddtReso->numero }} 
+                                                <small>({{ $ddtReso->created_at->format('d/m/Y') }})</small>
+                                            </span>
+                                        @endforeach
+                                    </div>
+                                </div>
+                            @endif
+
+                            {{-- Anteprima Movimenti Reso --}}
+                            <div class="card">
+                                <div class="card-header bg-light-warning">
+                                    <h6 class="card-title mb-0">
+                                        <iconify-icon icon="solar:eye-bold" class="me-1"></iconify-icon>
+                                        Anteprima DDT di Reso
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <p class="text-muted mb-3">
+                                        <strong>Questi articoli verranno inclusi nel nuovo DDT di reso:</strong>
+                                    </p>
+                                    
+                                    <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                                        <table class="table table-sm table-hover">
+                                            <thead class="table-light sticky-top">
+                                                <tr>
+                                                    <th>Tipo</th>
+                                                    <th>Codice</th>
+                                                    <th>Descrizione</th>
+                                                    <th class="text-center">Quantità</th>
+                                                    <th class="text-end">Costo Unit.</th>
+                                                    <th class="text-end">Costo Tot.</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @php
+                                                    $totaleArticoli = 0;
+                                                    $totaleValore = 0;
+                                                @endphp
+                                                @foreach($movimentiDisponibili as $movimento)
+                                                    @php
+                                                        $item = $movimento->getItem();
+                                                        $totaleArticoli += $movimento->quantita;
+                                                        $totaleValore += $movimento->costo_totale;
+                                                    @endphp
+                                                    <tr>
+                                                        <td>
+                                                            @if($movimento->articolo_id)
+                                                                <span class="badge bg-light-primary text-primary">Articolo</span>
+                                                            @else
+                                                                <span class="badge bg-light-warning text-warning">PF</span>
+                                                            @endif
+                                                        </td>
+                                                        <td><strong>{{ $item->codice ?? 'N/A' }}</strong></td>
+                                                        <td>{{ Str::limit($item->descrizione ?? '', 40) }}</td>
+                                                        <td class="text-center">{{ $movimento->quantita }}</td>
+                                                        <td class="text-end">€{{ number_format($movimento->costo_unitario, 2, ',', '.') }}</td>
+                                                        <td class="text-end"><strong>€{{ number_format($movimento->costo_totale, 2, ',', '.') }}</strong></td>
+                                                    </tr>
+                                                @endforeach
+                                            </tbody>
+                                            <tfoot class="table-light">
+                                                <tr>
+                                                    <th colspan="3" class="text-end">TOTALE:</th>
+                                                    <th class="text-center">{{ $totaleArticoli }}</th>
+                                                    <th colspan="2" class="text-end"><strong>€{{ number_format($totaleValore, 2, ',', '.') }}</strong></th>
+                                                </tr>
+                                            </tfoot>
+                                        </table>
+                                    </div>
+
+                                    <div class="mt-3 p-3 bg-light-warning rounded">
+                                        <div class="row text-center">
+                                            <div class="col-md-4">
+                                                <strong class="d-block text-warning">Articoli Totali</strong>
+                                                <span class="fs-4">{{ $totaleArticoli }}</span>
+                                            </div>
+                                            <div class="col-md-4">
+                                                <strong class="d-block text-warning">Valore Totale</strong>
+                                                <span class="fs-4">€{{ number_format($totaleValore, 2, ',', '.') }}</span>
+                                            </div>
+                                            <div class="col-md-4">
+                                                <strong class="d-block text-warning">DDT Precedenti</strong>
+                                                <span class="fs-4">{{ $deposito->ddtResi->count() }}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        @endif
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" wire:click="chiudiGeneraDdtResoModal">
+                            <iconify-icon icon="solar:close-circle-bold" class="me-1"></iconify-icon>
+                            Annulla
+                        </button>
+                        @if($movimentiDisponibili->isNotEmpty())
+                            <button type="button" 
+                                    class="btn btn-warning btn-lg" 
+                                    wire:click="generaDdtReso"
+                                    wire:loading.attr="disabled">
+                                <iconify-icon icon="solar:document-add-bold" class="me-1"></iconify-icon>
+                                <span wire:loading.remove wire:target="generaDdtReso">Genera DDT di Reso</span>
+                                <span wire:loading wire:target="generaDdtReso">
+                                    <span class="spinner-border spinner-border-sm me-2"></span>
+                                    Generazione in corso...
+                                </span>
+                            </button>
+                        @endif
                     </div>
                 </div>
             </div>

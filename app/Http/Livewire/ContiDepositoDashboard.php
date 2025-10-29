@@ -37,6 +37,7 @@ class ContiDepositoDashboard extends Component
     public $sedeMittenteId = '';
     public $sedeDestinatariaId = '';
     public $noteDeposito = '';
+    public $stepCreazioneDeposito = 1; // 1 = Info, 2 = Anteprima
 
     protected $queryString = [
         'search' => ['except' => ''],
@@ -75,10 +76,17 @@ class ContiDepositoDashboard extends Component
     {
         return Sede::where('attivo', true)->orderBy('nome')->get();
     }
+    
+    public function getCanContinueProperty()
+    {
+        return !empty($this->sedeMittenteId) && 
+               !empty($this->sedeDestinatariaId) && 
+               $this->sedeMittenteId != $this->sedeDestinatariaId;
+    }
 
     public function getDepositi()
     {
-        return ContoDeposito::with(['sedeMittente', 'sedeDestinataria', 'creatoDa', 'ddtInvio', 'ddtReso'])
+        return ContoDeposito::with(['sedeMittente', 'sedeDestinataria', 'creatoDa', 'ddtInvio', 'ddtReso', 'ddtDepositi', 'fattureVendita'])
             ->when($this->search, function ($query) {
                 $query->where(function ($q) {
                     $q->where('codice', 'like', '%' . $this->search . '%')
@@ -175,8 +183,34 @@ class ContiDepositoDashboard extends Component
 
     public function apriNuovoDepositoModal()
     {
-        $this->reset(['sedeMittenteId', 'sedeDestinatariaId', 'noteDeposito']);
+        $this->reset(['sedeMittenteId', 'sedeDestinatariaId', 'noteDeposito', 'stepCreazioneDeposito']);
+        $this->stepCreazioneDeposito = 1;
         $this->showNuovoDepositoModal = true;
+    }
+    
+    public function vaiAdAnteprima()
+    {
+        // Converti stringhe vuote in null per validazione
+        $mittenteId = $this->sedeMittenteId === '' ? null : (int)$this->sedeMittenteId;
+        $destinatariaId = $this->sedeDestinatariaId === '' ? null : (int)$this->sedeDestinatariaId;
+        
+        // Valida solo le info base
+        $this->validate([
+            'sedeMittenteId' => 'required|exists:sedi,id|different:sedeDestinatariaId',
+            'sedeDestinatariaId' => 'required|exists:sedi,id|different:sedeMittenteId',
+        ], [
+            'sedeMittenteId.required' => 'Seleziona la sede mittente',
+            'sedeDestinatariaId.required' => 'Seleziona la sede destinataria',
+            'sedeMittenteId.different' => 'La sede mittente deve essere diversa dalla destinataria',
+            'sedeDestinatariaId.different' => 'La sede destinataria deve essere diversa dalla mittente',
+        ]);
+        
+        $this->stepCreazioneDeposito = 2; // Vai all'anteprima
+    }
+    
+    public function tornaAllInfo()
+    {
+        $this->stepCreazioneDeposito = 1;
     }
 
     public function chiudiNuovoDepositoModal()
@@ -222,8 +256,15 @@ class ContiDepositoDashboard extends Component
                 'creato_da' => auth()->id(),
             ]);
 
-            session()->flash('success', "Deposito {$deposito->codice} creato con successo");
             $this->chiudiNuovoDepositoModal();
+            
+            session()->flash('success', "✅ Deposito <strong>{$deposito->codice}</strong> creato con successo!<br>
+                <small>Mittente: {$deposito->sedeMittente->nome} → Destinataria: {$deposito->sedeDestinataria->nome}</small><br>
+                <small>Scadenza: {$deposito->data_scadenza->format('d/m/Y')} (1 anno)</small><br>
+                <a href='" . route('conti-deposito.gestisci', $deposito->id) . "' class='btn btn-sm btn-primary mt-2'>
+                    <iconify-icon icon='solar:settings-bold' class='me-1'></iconify-icon>
+                    Aggiungi Articoli al Deposito
+                </a>");
             
             // Redirect alla pagina di gestione del deposito per aggiungere articoli
             return redirect()->route('conti-deposito.gestisci', $deposito->id);

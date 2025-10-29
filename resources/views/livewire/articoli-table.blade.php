@@ -771,11 +771,22 @@
                                 </td>
                                 <td>
                                     <div class="text-center">
+                                        @php
+                                            // Preferisci fattura se presente, altrimenti DDT
+                                            $fattura = $articolo->fatturaDettaglio->first()?->fattura;
+                                            $ddt = $articolo->ddtDettaglio->first()?->ddt;
+                                            $documento = $fattura ?? $ddt;
+                                            $tipoDocumento = $fattura ? 'FATTURA' : 'DDT';
+                                            $badgeColor = $fattura ? 'success' : 'primary';
+                                        @endphp
+                                        
                                         <!-- Fornitore -->
                                         <div class="mb-1">
                                             <div class="d-flex align-items-center justify-content-center gap-1">
                                                 <iconify-icon icon="solar:shop-bold" class="text-warning"></iconify-icon>
-                                                <small class="fw-semibold">{{ Str::limit($articolo->ddtDettaglio->first()?->ddt?->fornitore?->ragione_sociale ?? 'N/A', 15) }}</small>
+                                                <small class="fw-semibold">
+                                                    {{ Str::limit($documento?->fornitore?->ragione_sociale ?? 'N/A', 15) }}
+                                                </small>
                                             </div>
                                         </div>
                                         
@@ -783,7 +794,7 @@
                                         <div class="mb-1">
                                             <div class="d-flex align-items-center justify-content-center gap-1">
                                                 <iconify-icon icon="solar:document-bold" class="text-info"></iconify-icon>
-                                                <small class="text-muted">{{ $articolo->ddtDettaglio->first()?->ddt?->numero ?? 'N/A' }}</small>
+                                                <small class="text-muted">{{ $documento?->numero ?? 'N/A' }}</small>
                                             </div>
                                         </div>
                                         
@@ -791,10 +802,26 @@
                                         <div class="mb-1">
                                             <div class="d-flex align-items-center justify-content-center gap-1">
                                                 <iconify-icon icon="solar:calendar-bold" class="text-primary"></iconify-icon>
-                                                <small class="text-muted">{{ $articolo->ddtDettaglio->first()?->ddt?->data_documento ? $articolo->ddtDettaglio->first()->ddt->data_documento->format('d/m/Y') : 'N/A' }}</small>
-                                                <span class="badge bg-primary-subtle text-primary fs-11">DDT</span>
+                                                <small class="text-muted">
+                                                    @if($documento && $documento->data_documento)
+                                                        {{ $documento->data_documento->format('d/m/Y') }}
+                                                    @else
+                                                        N/A
+                                                    @endif
+                                                </small>
+                                                <span class="badge bg-{{ $badgeColor }}-subtle text-{{ $badgeColor }} fs-11">{{ $tipoDocumento }}</span>
                                             </div>
                                         </div>
+                                        
+                                        @if($fattura && $ddt)
+                                            <!-- Se ci sono entrambi, mostra anche il DDT -->
+                                            <div class="mb-1 mt-2 pt-2 border-top">
+                                                <div class="d-flex align-items-center justify-content-center gap-1">
+                                                    <iconify-icon icon="solar:document-bold" class="text-info small"></iconify-icon>
+                                                    <small class="text-muted">DDT: {{ $ddt->numero }}</small>
+                                                </div>
+                                            </div>
+                                        @endif
                                     </div>
                                 </td>
                                 <td>

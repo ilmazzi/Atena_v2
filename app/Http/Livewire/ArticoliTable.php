@@ -507,7 +507,13 @@ class ArticoliTable extends Component
      */
     private function getFilteredQuery()
     {
-        $query = Articolo::with(['categoria', 'sede', 'giacenza', 'ddtDettaglio.ddt.fornitore']);
+        $query = Articolo::with([
+            'categoria', 
+            'sede', 
+            'giacenza', 
+            'ddtDettaglio.ddt.fornitore',
+            'fatturaDettaglio.fattura.fornitore'
+        ]);
 
         // Applica tutti i filtri (stessa logica del render)
         if ($this->search) {
@@ -638,7 +644,14 @@ class ArticoliTable extends Component
     public function render()
     {
         // Query Eloquent per tutti gli articoli con relazioni
-        $query = Articolo::with(['categoria', 'sede', 'giacenza', 'ddtDettaglio.ddt.fornitore','categoriaMerceologica']);
+        $query = Articolo::with([
+            'categoria', 
+            'sede', 
+            'giacenza', 
+            'ddtDettaglio.ddt.fornitore',
+            'fatturaDettaglio.fattura.fornitore',
+            'categoriaMerceologica'
+        ]);
 
         // Applica filtri
         if ($this->search) {
@@ -759,7 +772,14 @@ class ArticoliTable extends Component
         $query->orderBy($this->sortField, $this->sortDirection);
 
         // Eager loading per performance
-        $articoli = $query->with(['categoria', 'sede', 'giacenza', 'ddtDettaglio.ddt.fornitore', 'componentiUtilizzatoIn.prodottoFinito'])
+        $articoli = $query->with([
+            'categoria', 
+            'sede', 
+            'giacenza', 
+            'ddtDettaglio.ddt.fornitore',
+            'fatturaDettaglio.fattura.fornitore',
+            'componentiUtilizzatoIn.prodottoFinito'
+        ])
             ->paginate($this->perPage);
 
         // Statistiche DINAMICHE basate sui filtri applicati

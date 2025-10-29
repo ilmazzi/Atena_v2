@@ -16,16 +16,20 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('sedi', function (Blueprint $table) {
-            $table->foreignId('societa_id')
-                  ->nullable()
-                  ->after('tipo')
-                  ->constrained('societa')
-                  ->restrictOnDelete()
-                  ->comment('Società di appartenenza della sede');
-            
-            $table->index('societa_id', 'idx_sedi_societa');
-        });
+        // Verifica se la colonna esiste già (per migrazioni parzialmente eseguite)
+        $hasColumn = Schema::hasColumn('sedi', 'societa_id');
+        
+        // Step 1: Aggiungi colonna nullable SENZA foreign key iniziale (solo se non esiste)
+        if (!$hasColumn) {
+            Schema::table('sedi', function (Blueprint $table) {
+                $table->unsignedBigInteger('societa_id')
+                      ->nullable()
+                      ->after('tipo')
+                      ->comment('Società di appartenenza della sede');
+                
+                $table->index('societa_id', 'idx_sedi_societa');
+            });
+        }
         
         // ═══════════════════════════════════════════════════════════
         // MAPPING SEDI → SOCIETÀ
@@ -42,9 +46,27 @@ return new class extends Migration
             ->where('codice', 'ROM') // Roma
             ->update(['societa_id' => 2]); // Luigi De Pascalis
         
-        // Dopo il mapping, rendi il campo NOT NULL
+        // Step 2: Droppa eventuali foreign key esistenti (se presenti)
+        // Necessario per poter modificare la colonna
+        try {
+            Schema::table('sedi', function (Blueprint $table) {
+                $table->dropForeign(['societa_id']);
+            });
+        } catch (\Exception $e) {
+            // Foreign key non esiste, continua (ok se la migrazione è nuova)
+        }
+        
+        // Step 3: Modifica colonna da nullable a NOT NULL
         Schema::table('sedi', function (Blueprint $table) {
-            $table->foreignId('societa_id')->nullable(false)->change();
+            $table->unsignedBigInteger('societa_id')->nullable(false)->change();
+        });
+        
+        // Step 4: Aggiungi foreign key constraint
+        Schema::table('sedi', function (Blueprint $table) {
+            $table->foreign('societa_id')
+                  ->references('id')
+                  ->on('societa')
+                  ->onDelete('restrict');
         });
     }
 

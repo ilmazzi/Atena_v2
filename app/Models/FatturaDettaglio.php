@@ -21,12 +21,21 @@ class FatturaDettaglio extends Model
         'fattura_id',
         'articolo_id',
         'quantita',
+        'prezzo_unitario',
+        'totale_riga',
+        'codice_articolo',
+        'descrizione',
         'caricato',
     ];
     
     protected $casts = [
         'quantita' => 'integer',
+        'prezzo_unitario' => 'decimal:2',
+        'totale_riga' => 'decimal:2',
+        'sconto_percentuale' => 'decimal:2',
+        'iva_percentuale' => 'decimal:2',
         'caricato' => 'boolean',
+        'data_carico_riga' => 'date',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];

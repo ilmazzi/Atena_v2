@@ -47,6 +47,13 @@ Route::middleware('auth')->group(function () {
         Route::get('/scarico', ScaricoMagazzino::class)->name('magazzino.scarico');
         Route::get('/scanner', ScannerInventario::class)->name('magazzino.scanner');
     });
+
+    // Amministrazione Magazzino routes
+    Route::prefix('amministrazione-magazzino')->name('amministrazione-magazzino.')->group(function () {
+        Route::get('/', function () {
+            return view('amministrazione-magazzino.index');
+        })->name('index');
+    });
     
     // Stampanti routes
 Route::prefix('stampanti')->group(function () {
@@ -104,6 +111,12 @@ Route::prefix('stampanti')->group(function () {
             Route::get('/', [\App\Http\Controllers\MovimentazioneInternaController::class, 'index'])->name('index');
             Route::get('/{movimentazione}/stampa', [\App\Http\Controllers\MovimentazioneInternaController::class, 'stampaDdt'])->name('stampa');
             Route::get('/{movimentazione}/download', [\App\Http\Controllers\MovimentazioneInternaController::class, 'downloadDdt'])->name('download');
+        });
+
+        // Fatture Vendita routes
+        Route::prefix('fatture-vendita')->name('fatture-vendita.')->group(function () {
+            Route::get('/{fatturaVendita}', [\App\Http\Controllers\FatturaVenditaController::class, 'show'])->name('show');
+            Route::get('/{fatturaVendita}/stampa', [\App\Http\Controllers\FatturaVenditaController::class, 'stampa'])->name('stampa');
         });
 
 // Routes Inventario

@@ -8,7 +8,8 @@ use App\Models\Articolo;
 use App\Models\ProdottoFinito;
 use App\Models\DdtDeposito;
 use App\Models\DdtDepositoDettaglio;
-use App\Models\Fattura;
+use App\Models\Fattura; // Fatture di acquisto (legacy)
+use App\Models\FatturaVendita; // Fatture di vendita
 use App\Services\NotificaService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -192,7 +193,7 @@ class ContoDepositoService
         ContoDeposito $contoDeposito,
         $item, // Articolo o ProdottoFinito
         int $quantita,
-        ?Fattura $fattura = null
+        ?FatturaVendita $fattura = null
     ): MovimentoDeposito {
         $isArticolo = $item instanceof Articolo;
         $costoUnitario = $isArticolo ? $item->prezzo_acquisto : $item->costo_totale;
@@ -500,12 +501,27 @@ class ContoDepositoService
             // Aggiorna statistiche deposito
             $contoDeposito->aggiornaStatistiche();
             
-            // Verifica se il deposito è completamente vuoto
-            if ($contoDeposito->getArticoliRimanenti() == 0) {
+            // Calcola articoli rimanenti REALI (inclusi quelli ancora in deposito)
+            $articoliRimanentiRealCount = $this->getArticoliRimanentiInDeposito($contoDeposito)->sum('quantita');
+            $pfRimanentiCount = $this->getProdottiFinitiRimanentiInDeposito($contoDeposito)->count();
+            $totaleRimanenti = $articoliRimanentiRealCount + $pfRimanentiCount;
+            
+            // Aggiorna stato: chiudi SOLO se non ci sono più articoli/PF rimanenti
+            if ($totaleRimanenti == 0) {
                 $contoDeposito->update(['stato' => 'chiuso']);
-            } elseif ($contoDeposito->articoli_venduti > 0 || $contoDeposito->articoli_rientrati > 0) {
-                // Se ci sono vendite o resi, lo stato diventa parziale
-                $contoDeposito->update(['stato' => 'parziale']);
+            } else {
+                // Se ci sono ancora articoli rimanenti, mantieni stato attivo/parziale/scaduto
+                // NON chiudere il deposito finché ci sono articoli da restituire o vendere
+                if ($contoDeposito->stato === 'attivo') {
+                    // Se ha vendite o resi, diventa parziale, ma rimane gestibile
+                    if ($contoDeposito->articoli_venduti > 0 || $contoDeposito->articoli_rientrati > 0) {
+                        $contoDeposito->update(['stato' => 'parziale']);
+                    }
+                    // Se è scaduto, mantieni stato scaduto ma gestibile
+                } elseif ($contoDeposito->isScaduto() && $contoDeposito->stato !== 'scaduto') {
+                    $contoDeposito->update(['stato' => 'scaduto']);
+                }
+                // Se già parziale o scaduto, mantieni lo stato (rimane gestibile)
             }
 
             return $movimentiReso;
@@ -581,20 +597,31 @@ class ContoDepositoService
             ->get()
             ->groupBy('articolo_id');
 
+        // IMPORTANTE: Sottrai anche i movimenti di RESO
+        $movimentiReso = $contoDeposito->movimenti()
+            ->where('tipo_movimento', 'reso')
+            ->whereNotNull('articolo_id')
+            ->get()
+            ->groupBy('articolo_id');
+
         $articoliRimanenti = collect();
 
         foreach ($movimentiInvio as $articoloId => $movimenti) {
             $qtaInviata = $movimenti->sum('quantita');
             $qtaVenduta = $movimentiVendita->get($articoloId, collect())->sum('quantita');
-            $qtaRimanente = $qtaInviata - $qtaVenduta;
+            $qtaResa = $movimentiReso->get($articoloId, collect())->sum('quantita');
+            // Calcola rimanenti sottraendo vendite E resi
+            $qtaRimanente = $qtaInviata - $qtaVenduta - $qtaResa;
 
             if ($qtaRimanente > 0) {
                 $articolo = Articolo::find($articoloId);
-                $articoliRimanenti->push([
-                    'articolo' => $articolo,
-                    'quantita' => $qtaRimanente,
-                    'costo_unitario' => $movimenti->first()->costo_unitario
-                ]);
+                if ($articolo) {
+                    $articoliRimanenti->push([
+                        'articolo' => $articolo,
+                        'quantita' => $qtaRimanente,
+                        'costo_unitario' => $movimenti->first()->costo_unitario
+                    ]);
+                }
             }
         }
 
@@ -618,26 +645,38 @@ class ContoDepositoService
             ->pluck('prodotto_finito_id')
             ->toArray();
 
+        // IMPORTANTE: Escludi anche i PF già resi
+        $movimentiReso = $contoDeposito->movimenti()
+            ->where('tipo_movimento', 'reso')
+            ->whereNotNull('prodotto_finito_id')
+            ->get()
+            ->pluck('prodotto_finito_id')
+            ->toArray();
+
         $prodottiFinitiRimanenti = collect();
 
         foreach ($movimentiInvio as $movimento) {
-            if (!in_array($movimento->prodotto_finito_id, $movimentiVendita)) {
+            $pfId = $movimento->prodotto_finito_id;
+            // Escludi se venduto O se già reso
+            if (!in_array($pfId, $movimentiVendita) && !in_array($pfId, $movimentiReso)) {
                 $prodottoFinito = ProdottoFinito::with(['componentiArticoli.articolo.categoriaMerceologica'])
-                    ->find($movimento->prodotto_finito_id);
+                    ->find($pfId);
                 
-                $prodottiFinitiRimanenti->push([
-                    'prodotto_finito' => $prodottoFinito,
-                    'costo_unitario' => $movimento->costo_unitario,
-                    'componenti' => $prodottoFinito->componentiArticoli->map(function ($componente) {
-                        return [
-                            'articolo' => $componente->articolo,
-                            'quantita' => $componente->quantita,
-                            'costo_unitario' => $componente->costo_unitario,
-                            'costo_totale' => $componente->costo_totale,
-                            'stato' => $componente->stato,
-                        ];
-                    })
-                ]);
+                if ($prodottoFinito) {
+                    $prodottiFinitiRimanenti->push([
+                        'prodotto_finito' => $prodottoFinito,
+                        'costo_unitario' => $movimento->costo_unitario,
+                        'componenti' => $prodottoFinito->componentiArticoli->map(function ($componente) {
+                            return [
+                                'articolo' => $componente->articolo,
+                                'quantita' => $componente->quantita,
+                                'costo_unitario' => $componente->costo_unitario,
+                                'costo_totale' => $componente->costo_totale,
+                                'stato' => $componente->stato,
+                            ];
+                        })
+                    ]);
+                }
             }
         }
 
@@ -736,14 +775,42 @@ class ContoDepositoService
             $articoliTotali = 0;
             $valoreTotale = 0;
 
-            // Ottieni TUTTI i movimenti reso (sia manuali che automatici)
-            $movimentiReso = $contoDeposito->movimenti()
+            // Ottieni movimenti reso NON ANCORA inclusi in un DDT
+            // Verifica quali movimenti sono già in un DDT di reso esistente
+            $ddtResiEsistenti = $contoDeposito->ddtResi()->with('dettagli')->get();
+            $movimentiGiaInDdt = collect();
+            
+            foreach ($ddtResiEsistenti as $ddtReso) {
+                foreach ($ddtReso->dettagli as $dettaglio) {
+                    $movimentiGiaInDdt->push([
+                        'articolo_id' => $dettaglio->articolo_id,
+                        'prodotto_finito_id' => $dettaglio->prodotto_finito_id,
+                        'quantita' => $dettaglio->quantita,
+                    ]);
+                }
+            }
+            
+            // Ottieni TUTTI i movimenti reso e filtra quelli già in DDT
+            $tuttiMovimentiReso = $contoDeposito->movimenti()
                 ->where('tipo_movimento', 'reso')
                 ->with(['articolo', 'prodottoFinito'])
                 ->get();
 
+            // Filtra movimenti che NON sono già in un DDT
+            $movimentiReso = $tuttiMovimentiReso->filter(function ($movimento) use ($movimentiGiaInDdt) {
+                foreach ($movimentiGiaInDdt as $giaInDdt) {
+                    // Se corrisponde esattamente (stesso articolo/PF e stessa quantità), è già incluso
+                    if ($giaInDdt['articolo_id'] == $movimento->articolo_id && 
+                        $giaInDdt['prodotto_finito_id'] == $movimento->prodotto_finito_id &&
+                        $giaInDdt['quantita'] == $movimento->quantita) {
+                        return false; // Escludi questo movimento
+                    }
+                }
+                return true; // Include questo movimento
+            });
+
             if ($movimentiReso->isNotEmpty()) {
-                // Usa i movimenti reso esistenti (manuali o automatici già creati)
+                // Usa solo i movimenti reso NON ancora inclusi in un DDT
                 foreach ($movimentiReso as $movimento) {
                     $item = $movimento->getItem();
                     
@@ -806,8 +873,12 @@ class ContoDepositoService
                 'valore_dichiarato' => $valoreTotale,
             ]);
 
-            // Aggiorna deposito con DDT reso
-            $contoDeposito->update(['ddt_reso_id' => $ddtDeposito->id]);
+            // Aggiorna deposito con DDT reso (SOLO se è il primo, altrimenti mantiene il primo)
+            // Usiamo ddt_reso_id come riferimento al primo DDT per compatibilità
+            // Ma tutti i DDT sono accessibili tramite ddtResi()
+            if (!$contoDeposito->ddt_reso_id) {
+                $contoDeposito->update(['ddt_reso_id' => $ddtDeposito->id]);
+            }
             
             // Aggiorna tutti i movimenti reso con il riferimento al DDT
             // Nota: ddt_id punta a Ddt, ma DdtDeposito è separato

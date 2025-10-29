@@ -61,5 +61,39 @@
 
 {{-- Livewire 3: script di configurazione --}}
 @livewireScripts
+
+{{-- Back to Top Button --}}
+<button id="backToTopBtn" 
+        class="btn btn-primary rounded-circle shadow-lg position-fixed bottom-0 end-0 m-4" 
+        style="width: 50px; height: 50px; z-index: 1000; display: none; border: none;"
+        title="Torna su">
+    <iconify-icon icon="solar:double-alt-arrow-up-bold" style="font-size: 24px;"></iconify-icon>
+</button>
+
+<script>
+    // Back to Top Button
+    (function() {
+        const backToTopBtn = document.getElementById('backToTopBtn');
+        
+        if (!backToTopBtn) return;
+        
+        // Mostra/nascondi il pulsante in base allo scroll
+        window.addEventListener('scroll', function() {
+            if (window.pageYOffset > 300) {
+                backToTopBtn.style.display = 'block';
+            } else {
+                backToTopBtn.style.display = 'none';
+            }
+        });
+        
+        // Scroll smooth quando si clicca
+        backToTopBtn.addEventListener('click', function() {
+            window.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+            });
+        });
+    })();
+</script>
 </body>
 </html>

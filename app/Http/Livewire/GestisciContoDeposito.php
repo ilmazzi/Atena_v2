@@ -7,6 +7,7 @@ use Livewire\WithPagination;
 use App\Models\ContoDeposito;
 use App\Models\Articolo;
 use App\Models\ProdottoFinito;
+use App\Models\FatturaVendita;
 use App\Services\ContoDepositoService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Collection;
@@ -35,6 +36,9 @@ class GestisciContoDeposito extends Component
     // Form reso manuale
     public $articoliSelezionatiReso = [];
     public $prodottiFinitiSelezionatiReso = [];
+    
+    // Modal generazione DDT reso
+    public $showGeneraDdtResoModal = false;
 
     // Form aggiunta articoli
     public $search = '';
@@ -44,6 +48,8 @@ class GestisciContoDeposito extends Component
 
     // Form vendita
     public $itemVendita = null;
+    public $itemVenditaTipo = null;
+    public $itemVenditaId = null;
     public $quantitaVendita = 1;
     
     // Form vendita multipla
@@ -51,7 +57,7 @@ class GestisciContoDeposito extends Component
     public $articoliSelezionatiVendita = [];
     public $prodottiFinitiSelezionatiVendita = [];
     
-    // Dati fattura vendita
+    // Dati fattura vendita (condivisi tra vendita singola e multipla)
     public $numeroFattura = '';
     public $dataFattura = '';
     public $clienteNome = '';
@@ -65,14 +71,14 @@ class GestisciContoDeposito extends Component
         'articoliSelezionati.*.quantita' => 'required|integer|min:1',
         'quantitaVendita' => 'required|integer|min:1',
         
-        // Regole vendita multipla - OPZIONALI
-        'numeroFattura' => 'nullable|string|max:50',
-        'dataFattura' => 'nullable|date',
-        'clienteNome' => 'nullable|string|max:100',
-        'clienteCognome' => 'nullable|string|max:100',
+        // Regole fattura vendita - OBBLIGATORIE per tutte le vendite
+        'numeroFattura' => 'required|string|max:50',
+        'dataFattura' => 'required|date',
+        'clienteNome' => 'required|string|max:100',
+        'clienteCognome' => 'required|string|max:100',
         'clienteTelefono' => 'nullable|string|max:20',
         'clienteEmail' => 'nullable|email|max:100',
-        'importoTotaleFattura' => 'nullable|numeric|min:0.01',
+        'importoTotaleFattura' => 'nullable|numeric|min:0.01', // Opzionale: calcolato automaticamente se vuoto
         'noteFattura' => 'nullable|string|max:500',
         
         // Selezioni - OPZIONALI
@@ -83,11 +89,13 @@ class GestisciContoDeposito extends Component
     public function mount($depositoId)
     {
         $this->depositoId = $depositoId;
-        $this->deposito = ContoDeposito::with([
+        $this->deposito = ContoDeposito::with(['ddtResi.dettagli', 'ddtInvio', 'ddtRimando',
             'sedeMittente', 
             'sedeDestinataria',
             'movimenti.articolo.giacenza',
             'movimenti.prodottoFinito',
+            'movimentiVendita.fatturaVendita', // Carica fatture di vendita dai movimenti
+            'fattureVendita', // Carica fatture di vendita direttamente
             'creatoDa'
         ])->findOrFail($depositoId);
         
@@ -388,7 +396,7 @@ class GestisciContoDeposito extends Component
                 'clienteCognome' => 'required|string|max:100',
                 'clienteTelefono' => 'nullable|string|max:20',
                 'clienteEmail' => 'nullable|email|max:100',
-                'importoTotaleFattura' => 'required|numeric|min:0',
+                'importoTotaleFattura' => 'nullable|numeric|min:0', // Opzionale: calcolato se vuoto
                 'noteFattura' => 'nullable|string|max:500',
             ]);
             \Log::info("✅ Validazione OK!");
@@ -410,8 +418,36 @@ class GestisciContoDeposito extends Component
             DB::transaction(function () {
                 \Log::info("📦 Dentro transazione DB...");
                 
-                // TODO: Creare record fattura se necessario
-                // $fattura = $this->creaFatturaVendita();
+                // Calcola totale articoli per fattura
+                $totaleArticoli = 0;
+                $importoCalcolato = 0;
+                
+                foreach ($this->articoliSelezionatiVendita as $articoloId => $articoloData) {
+                    $totaleArticoli += $articoloData['quantita'];
+                    // Calcola importo per articolo (se necessario)
+                    $articolo = Articolo::findOrFail($articoloId);
+                    $importoCalcolato += ($articolo->prezzo_acquisto ?? 0) * $articoloData['quantita'];
+                }
+                
+                foreach ($this->prodottiFinitiSelezionatiVendita as $pfId => $pfData) {
+                    $totaleArticoli += 1;
+                    $prodottoFinito = ProdottoFinito::findOrFail($pfId);
+                    $importoCalcolato += ($prodottoFinito->costo_totale ?? 0);
+                }
+                
+                // Se importo non specificato, usa il calcolato
+                if (empty($this->importoTotaleFattura) || $this->importoTotaleFattura == 0) {
+                    $this->importoTotaleFattura = $importoCalcolato;
+                }
+                
+                // Crea fattura di vendita
+                \Log::info("📄 Creazione fattura vendita...");
+                $fattura = $this->creaFatturaVendita();
+                $fattura->update([
+                    'quantita_totale' => $totaleArticoli,
+                    'numero_articoli' => count($this->articoliSelezionatiVendita) + count($this->prodottiFinitiSelezionatiVendita),
+                ]);
+                \Log::info("✅ Fattura vendita creata: {$fattura->numero}");
                 
                 \Log::info("🔧 Creazione ContoDepositoService...");
                 $service = new ContoDepositoService();
@@ -427,7 +463,8 @@ class GestisciContoDeposito extends Component
                     $service->registraVendita(
                         $this->deposito,
                         $articolo,
-                        $articoloData['quantita']
+                        $articoloData['quantita'],
+                        $fattura
                     );
                 }
                 
@@ -439,13 +476,17 @@ class GestisciContoDeposito extends Component
                     $service->registraVendita(
                         $this->deposito,
                         $prodottoFinito,
-                        1
+                        1,
+                        $fattura
                     );
                 }
                 
                 // Aggiorna deposito
                 $this->deposito->refresh();
             });
+            
+            // Ricarica fatture dopo la transazione
+            $this->deposito->load('fattureVendita');
             
             $totaleItemsVenduti = count($this->articoliSelezionatiVendita) + count($this->prodottiFinitiSelezionatiVendita);
             
@@ -495,58 +536,177 @@ class GestisciContoDeposito extends Component
     {
         if ($tipo === 'articolo') {
             $articoloData = $this->articoliInDeposito->firstWhere('articolo.id', $itemId);
+            $articolo = $articoloData['articolo'];
+            // Serializza solo dati necessari invece dell'oggetto Eloquent
             $this->itemVendita = [
                 'tipo' => 'articolo',
-                'item' => $articoloData['articolo'],
+                'item_id' => $articolo->id,
+                'item_codice' => $articolo->codice,
+                'item_descrizione' => $articolo->descrizione,
                 'quantita_disponibile' => $articoloData['quantita'],
                 'costo_unitario' => $articoloData['costo_unitario']
             ];
+            $this->itemVenditaTipo = 'articolo';
+            $this->itemVenditaId = $articolo->id;
         } else {
             $pfData = $this->prodottiFinitiInDeposito->firstWhere('prodotto_finito.id', $itemId);
+            $pf = $pfData['prodotto_finito'];
+            // Serializza solo dati necessari invece dell'oggetto Eloquent
             $this->itemVendita = [
                 'tipo' => 'prodotto_finito',
-                'item' => $pfData['prodotto_finito'],
+                'item_id' => $pf->id,
+                'item_codice' => $pf->codice,
+                'item_descrizione' => $pf->descrizione,
                 'quantita_disponibile' => 1,
                 'costo_unitario' => $pfData['costo_unitario']
             ];
+            $this->itemVenditaTipo = 'prodotto_finito';
+            $this->itemVenditaId = $pf->id;
         }
 
         $this->quantitaVendita = 1;
+        
+        // Calcola e inizializza importo totale automaticamente
+        $costoUnitario = $this->itemVendita['costo_unitario'];
+        $this->importoTotaleFattura = $costoUnitario * $this->quantitaVendita;
+        
+        // Inizializza dataFattura solo se vuota
+        if (empty($this->dataFattura)) {
+            $this->dataFattura = now()->format('Y-m-d');
+        }
+        // Reset validazione precedente
+        $this->resetValidation();
         $this->showRegistraVenditaModal = true;
+        \Log::info("✅ Modal vendita aperto per {$tipo} ID: {$itemId}, totale iniziale: {$this->importoTotaleFattura}");
     }
 
     public function chiudiRegistraVenditaModal()
     {
         $this->showRegistraVenditaModal = false;
         $this->itemVendita = null;
+        // NON resettare i campi fattura - potrebbero essere riutilizzati
         $this->resetValidation();
     }
-
+    
+    
     public function registraVendita()
     {
-        // Validazione specifica per vendita singola
-        $this->validate([
-            'quantitaVendita' => 'required|integer|min:1',
-        ]);
-
+        \Log::info("🔥 registraVendita CHIAMATO!");
+        \Log::info("📊 Dati: quantitaVendita={$this->quantitaVendita}, numeroFattura={$this->numeroFattura}, clienteNome={$this->clienteNome}");
+        \Log::info("📦 itemVenditaTipo={$this->itemVenditaTipo}, itemVenditaId={$this->itemVenditaId}");
+        
         try {
+            // Recupera item dal database per calcolare totale
+            if ($this->itemVenditaTipo === 'articolo') {
+                $item = Articolo::findOrFail($this->itemVenditaId);
+                $costoUnitario = $item->prezzo_acquisto ?? 0;
+            } else {
+                $item = ProdottoFinito::findOrFail($this->itemVenditaId);
+                $costoUnitario = $item->costo_totale ?? 0;
+            }
+
+            // Calcola importo totale se non specificato
+            if (empty($this->importoTotaleFattura) || $this->importoTotaleFattura == 0) {
+                $this->importoTotaleFattura = $costoUnitario * $this->quantitaVendita;
+                \Log::info("💰 Importo calcolato automaticamente: {$this->importoTotaleFattura}");
+            }
+            
+            // Validazione per vendita singola (inclusi campi fattura)
+            $this->validate([
+                'quantitaVendita' => 'required|integer|min:1',
+                'numeroFattura' => 'required|string|max:50',
+                'dataFattura' => 'required|date',
+                'clienteNome' => 'required|string|max:100',
+                'clienteCognome' => 'required|string|max:100',
+                'clienteTelefono' => 'nullable|string|max:20',
+                'clienteEmail' => 'nullable|email|max:100',
+                'importoTotaleFattura' => 'required|numeric|min:0.01', // Ora obbligatorio dopo calcolo
+                'noteFattura' => 'nullable|string|max:500',
+                'itemVenditaTipo' => 'required|in:articolo,prodotto_finito',
+                'itemVenditaId' => 'required|integer',
+            ]);
+            \Log::info("✅ Validazione OK!");
+            
+            \Log::info("📄 Creazione fattura...");
+            // Crea fattura di vendita (il totale è già stato calcolato sopra)
+            $fattura = $this->creaFatturaVendita();
+            \Log::info("✅ Fattura creata: {$fattura->numero}");
+            
             $service = new ContoDepositoService();
             
-            $service->registraVendita(
+            \Log::info("📦 Registrazione vendita nel service...");
+            $movimento = $service->registraVendita(
                 $this->deposito,
-                $this->itemVendita['item'],
-                $this->quantitaVendita
+                $item,
+                $this->quantitaVendita,
+                $fattura
             );
+            \Log::info("✅ Movimento creato!");
 
-            // Aggiorna deposito
+            // Aggiorna deposito e ricarica fatture
             $this->deposito->refresh();
+            $this->deposito->load('fattureVendita');
 
-            session()->flash('success', 'Vendita registrata con successo');
+            session()->flash('success', "✅ Vendita registrata con successo!<br>
+                <small>Fattura: <strong>{$fattura->numero}</strong> | Cliente: {$this->clienteNome} {$this->clienteCognome}</small>");
+            
+            // Chiudi modal solo se tutto è OK
             $this->chiudiRegistraVenditaModal();
+            
+            \Log::info("🎉 VENDITA COMPLETATA!");
 
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::error("❌ Errore validazione: " . json_encode($e->errors()));
+            session()->flash('error', 'Errore di validazione. Verifica i campi inseriti.');
+            // NON chiudere il modal se c'è errore di validazione
         } catch (\Exception $e) {
+            \Log::error("❌ Errore durante registrazione: " . $e->getMessage());
+            \Log::error("Stack trace: " . $e->getTraceAsString());
             session()->flash('error', 'Errore durante la registrazione: ' . $e->getMessage());
+            // NON chiudere il modal se c'è errore
         }
+    }
+    
+    /**
+     * Crea una fattura di vendita per il deposito
+     */
+    private function creaFatturaVendita(): FatturaVendita
+    {
+        // Recupera DDT invio del deposito (se esiste)
+        $ddtInvio = $this->deposito->ddtInvio;
+        
+        // Costruisci note con riferimento DDT invio
+        $noteArray = [];
+        if (!empty($this->noteFattura)) {
+            $noteArray[] = $this->noteFattura;
+        }
+        if ($ddtInvio) {
+            $noteArray[] = "DDT Invio: {$ddtInvio->numero}";
+        }
+        
+        $note = !empty($noteArray) ? implode(' | ', $noteArray) : null;
+        
+        // importoTotaleFattura è già calcolato in registraVendita() prima di chiamare questo metodo
+        $importoTotale = $this->importoTotaleFattura;
+        
+        return FatturaVendita::create([
+            'numero' => $this->numeroFattura,
+            'anno' => date('Y', strtotime($this->dataFattura)),
+            'data_documento' => $this->dataFattura,
+            'cliente_nome' => $this->clienteNome,
+            'cliente_cognome' => $this->clienteCognome,
+            'cliente_telefono' => $this->clienteTelefono,
+            'cliente_email' => $this->clienteEmail,
+            'totale' => $importoTotale,
+            'imponibile' => $importoTotale, // Totale senza IVA
+            'iva' => 0, // Calcolare IVA se necessario
+            'sede_id' => $this->deposito->sede_destinataria_id,
+            'conto_deposito_id' => $this->deposito->id,
+            'ddt_invio_id' => $ddtInvio?->id,
+            'quantita_totale' => isset($this->itemVendita) ? $this->quantitaVendita : 0,
+            'numero_articoli' => isset($this->itemVendita) ? 1 : 0,
+            'note' => $note,
+        ]);
     }
 
     // ==========================================
@@ -572,9 +732,66 @@ class GestisciContoDeposito extends Component
         }
     }
 
+    public function apriGeneraDdtResoModal()
+    {
+        $this->showGeneraDdtResoModal = true;
+    }
+    
+    public function chiudiGeneraDdtResoModal()
+    {
+        $this->showGeneraDdtResoModal = false;
+    }
+    
+    public function getAnteprimaMovimentiResoProperty()
+    {
+        $service = new ContoDepositoService();
+        
+        // Ottieni movimenti reso NON ancora inclusi in DDT
+        $tuttiMovimentiReso = $this->deposito->movimenti()
+            ->where('tipo_movimento', 'reso')
+            ->with(['articolo', 'prodottoFinito'])
+            ->get();
+            
+        // Verifica quali sono già in DDT
+        $ddtResiEsistenti = $this->deposito->ddtResi()->with('dettagli')->get();
+        $movimentiGiaInDdt = collect();
+        
+        foreach ($ddtResiEsistenti as $ddtReso) {
+            foreach ($ddtReso->dettagli as $dettaglio) {
+                $movimentiGiaInDdt->push([
+                    'articolo_id' => $dettaglio->articolo_id,
+                    'prodotto_finito_id' => $dettaglio->prodotto_finito_id,
+                    'quantita' => $dettaglio->quantita,
+                ]);
+            }
+        }
+        
+        // Filtra movimenti disponibili per nuovo DDT
+        $movimentiDisponibili = $tuttiMovimentiReso->filter(function ($movimento) use ($movimentiGiaInDdt) {
+            foreach ($movimentiGiaInDdt as $giaInDdt) {
+                if ($giaInDdt['articolo_id'] == $movimento->articolo_id && 
+                    $giaInDdt['prodotto_finito_id'] == $movimento->prodotto_finito_id &&
+                    $giaInDdt['quantita'] == $movimento->quantita) {
+                    return false;
+                }
+            }
+            return true;
+        });
+        
+        return $movimentiDisponibili;
+    }
+    
     public function generaDdtReso()
     {
         try {
+            // Verifica se ci sono movimenti disponibili
+            $movimentiDisponibili = $this->getAnteprimaMovimentiResoProperty();
+            
+            if ($movimentiDisponibili->isEmpty()) {
+                session()->flash('warning', 'Non ci sono movimenti di reso disponibili per generare un nuovo DDT. Tutti i resi sono già stati inclusi in DDT precedenti.');
+                return;
+            }
+            
             $service = new ContoDepositoService();
             
             // Se il deposito è scaduto, gestisci il reso automatico di tutti i rimanenti
@@ -583,17 +800,22 @@ class GestisciContoDeposito extends Component
                 $this->deposito->refresh();
             }
             
-            // Genera il DDT (include tutti i movimenti reso, sia manuali che automatici)
+            // Genera il DDT (include solo movimenti reso non ancora in DDT)
             $ddtDeposito = $service->generaDdtReso($this->deposito);
             
             // Aggiorna deposito
             $this->deposito->refresh();
+            $this->chiudiGeneraDdtResoModal();
 
             $articoliTotali = $ddtDeposito->articoli_totali;
-            session()->flash('success', "DDT di reso {$ddtDeposito->numero} generato per {$articoliTotali} articoli");
+            $valoreTotale = $ddtDeposito->valore_dichiarato ?? 0;
             
-            // Redirect alla stampa DDT Deposito
-            return redirect()->route('ddt-deposito.stampa', $ddtDeposito->id);
+            session()->flash('success', "✅ DDT di reso <strong>{$ddtDeposito->numero}</strong> generato con successo!<br>
+                <small>Articoli: {$articoliTotali} | Valore: €" . number_format($valoreTotale, 2, ',', '.') . "</small><br>
+                <a href='" . route('ddt-deposito.stampa', $ddtDeposito->id) . "' target='_blank' class='btn btn-sm btn-info mt-2'>
+                    <iconify-icon icon='solar:printer-bold' class='me-1'></iconify-icon>
+                    Apri e Stampa DDT
+                </a>");
 
         } catch (\Exception $e) {
             session()->flash('error', 'Errore durante la generazione DDT reso: ' . $e->getMessage());
@@ -737,6 +959,8 @@ class GestisciContoDeposito extends Component
 
     public function render()
     {
+        // Assicura che ddtResi e fatture siano sempre caricati
+        $this->deposito->load(['ddtResi.dettagli', 'movimentiVendita.fatturaVendita', 'fattureVendita']);
         
         return view('livewire.gestisci-conto-deposito', [
             'articoliDisponibili' => $this->articoliDisponibili,

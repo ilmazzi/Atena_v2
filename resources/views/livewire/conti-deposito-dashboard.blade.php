@@ -154,7 +154,7 @@
                     <thead class="table-light">
                         <tr>
                             <th>Codice</th>
-                            <th>DDT</th>
+                            <th>DDT / Fatture</th>
                             <th>Sedi</th>
                             <th>Data Invio</th>
                             <th>Scadenza</th>
@@ -172,25 +172,49 @@
                                 </td>
                                 <td>
                                     <div class="d-flex flex-column gap-1">
+                                        {{-- DDT Invio --}}
                                         @if($deposito->ddt_invio_id && $deposito->ddtInvio)
                                             <div class="d-flex align-items-center gap-1">
                                                 <iconify-icon icon="solar:export-bold" class="text-primary small"></iconify-icon>
-                                                <a href="{{ route('ddt-deposito.stampa', $deposito->ddt_invio_id) }}" 
-                                                   class="text-primary small fw-bold" target="_blank" title="DDT Invio">
+                                                <a href="{{ route('ddt-deposito.show', $deposito->ddt_invio_id) }}" 
+                                                   class="text-primary small fw-bold" title="DDT Invio">
                                                     {{ $deposito->ddtInvio->numero }}
                                                 </a>
                                             </div>
                                         @endif
-                                        @if($deposito->ddt_reso_id && $deposito->ddtReso)
-                                            <div class="d-flex align-items-center gap-1">
-                                                <iconify-icon icon="solar:import-bold" class="text-warning small"></iconify-icon>
-                                                <a href="{{ route('ddt-deposito.stampa', $deposito->ddt_reso_id) }}" 
-                                                   class="text-warning small fw-bold" target="_blank" title="DDT Reso">
-                                                    {{ $deposito->ddtReso->numero }}
-                                                </a>
+                                        
+                                        {{-- DDT Resi --}}
+                                        @if($deposito->ddtResi->count() > 0)
+                                            <div class="d-flex flex-column gap-1">
+                                                @foreach($deposito->ddtResi as $ddtReso)
+                                                    <div class="d-flex align-items-center gap-1">
+                                                        <iconify-icon icon="solar:import-bold" class="text-warning small"></iconify-icon>
+                                                        <a href="{{ route('ddt-deposito.show', $ddtReso->id) }}" 
+                                                           class="text-warning small fw-bold" title="DDT Reso {{ $ddtReso->numero }}">
+                                                            {{ $ddtReso->numero }}
+                                                        </a>
+                                                    </div>
+                                                @endforeach
                                             </div>
                                         @endif
-                                        @if(!$deposito->ddt_invio_id && !$deposito->ddt_reso_id)
+                                        
+                                        {{-- Fatture di Vendita --}}
+                                        @if($deposito->fattureVendita && $deposito->fattureVendita->count() > 0)
+                                            <div class="d-flex flex-column gap-1">
+                                                @foreach($deposito->fattureVendita->sortByDesc('data_documento') as $fattura)
+                                                    <div class="d-flex align-items-center gap-1">
+                                                        <iconify-icon icon="solar:document-text-bold" class="text-success small"></iconify-icon>
+                                                        <a href="{{ route('fatture-vendita.show', $fattura->id) }}" 
+                                                           class="text-success small fw-bold" title="Fattura {{ $fattura->numero }} - Cliente: {{ $fattura->cliente_nome }} {{ $fattura->cliente_cognome }} - €{{ number_format($fattura->totale, 2, ',', '.') }}">
+                                                            FV {{ $fattura->numero }}
+                                                        </a>
+                                                    </div>
+                                                @endforeach
+                                            </div>
+                                        @endif
+                                        
+                                        {{-- Nessun documento --}}
+                                        @if(!$deposito->ddt_invio_id && $deposito->ddtResi->count() == 0 && (!$deposito->fattureVendita || $deposito->fattureVendita->count() == 0))
                                             <span class="text-muted small">-</span>
                                         @endif
                                     </div>
@@ -307,71 +331,229 @@
         </div>
     </div>
 
-    {{-- Modal Nuovo Deposito --}}
+    {{-- Modal Nuovo Deposito con Step Guidati --}}
     @if($showNuovoDepositoModal)
         <div class="modal fade show" style="display: block;" tabindex="-1">
-            <div class="modal-dialog">
+            <div class="modal-dialog modal-lg">
                 <div class="modal-content">
-                    <div class="modal-header">
+                    <div class="modal-header bg-primary text-white">
                         <h5 class="modal-title">
                             <iconify-icon icon="solar:add-circle-bold-duotone" class="me-2"></iconify-icon>
                             Nuovo Conto Deposito
                         </h5>
-                        <button type="button" wire:click="chiudiNuovoDepositoModal" class="btn-close"></button>
+                        <button type="button" wire:click="chiudiNuovoDepositoModal" class="btn-close btn-close-white"></button>
                     </div>
+                    
+                    {{-- Progress Steps --}}
+                    <div class="modal-body border-bottom">
+                        <div class="d-flex align-items-center justify-content-between">
+                            <div class="d-flex align-items-center {{ $stepCreazioneDeposito >= 1 ? 'text-primary' : 'text-muted' }}">
+                                <div class="rounded-circle bg-{{ $stepCreazioneDeposito >= 1 ? 'primary' : 'light' }} text-{{ $stepCreazioneDeposito >= 1 ? 'white' : 'muted' }} d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
+                                    <span class="fw-bold">{{ $stepCreazioneDeposito >= 2 ? '✓' : '1' }}</span>
+                                </div>
+                                <span class="ms-2 fw-semibold">Informazioni Deposito</span>
+                            </div>
+                            <div class="flex-grow-1 mx-3">
+                                <div class="progress" style="height: 2px;">
+                                    <div class="progress-bar bg-{{ $stepCreazioneDeposito >= 2 ? 'primary' : 'secondary' }}" 
+                                         style="width: {{ $stepCreazioneDeposito >= 2 ? '100' : '0' }}%"></div>
+                                </div>
+                            </div>
+                            <div class="d-flex align-items-center {{ $stepCreazioneDeposito >= 2 ? 'text-primary' : 'text-muted' }}">
+                                <span class="me-2 fw-semibold">Anteprima</span>
+                                <div class="rounded-circle bg-{{ $stepCreazioneDeposito >= 2 ? 'primary' : 'light' }} text-{{ $stepCreazioneDeposito >= 2 ? 'white' : 'muted' }} d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
+                                    <span class="fw-bold">2</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
                     <div class="modal-body">
-                        <div class="mb-3">
-                            <label class="form-label fw-semibold">Sede Mittente *</label>
-                            <select class="form-select @error('sedeMittenteId') is-invalid @enderror" 
-                                    wire:model="sedeMittenteId">
-                                <option value="">Seleziona sede mittente</option>
-                                @foreach($sedi as $sede)
-                                    <option value="{{ $sede->id }}">{{ $sede->nome }}</option>
-                                @endforeach
-                            </select>
-                            @error('sedeMittenteId')
-                                <div class="invalid-feedback">{{ $message }}</div>
-                            @enderror
-                        </div>
+                        @if($stepCreazioneDeposito == 1)
+                            {{-- STEP 1: Informazioni Deposito --}}
+                            <div class="alert alert-info">
+                                <iconify-icon icon="solar:info-circle-bold" class="me-2"></iconify-icon>
+                                <strong>Come funziona:</strong>
+                                <ol class="mb-0 mt-2">
+                                    <li>Inserisci le informazioni base del deposito</li>
+                                    <li>Verifica l'anteprima</li>
+                                    <li>Crea il deposito e aggiungi gli articoli</li>
+                                </ol>
+                            </div>
 
-                        <div class="mb-3">
-                            <label class="form-label fw-semibold">Sede Destinataria *</label>
-                            <select class="form-select @error('sedeDestinatariaId') is-invalid @enderror" 
-                                    wire:model="sedeDestinatariaId">
-                                <option value="">Seleziona sede destinataria</option>
-                                @foreach($sedi as $sede)
-                                    <option value="{{ $sede->id }}">{{ $sede->nome }}</option>
-                                @endforeach
-                            </select>
-                            @error('sedeDestinatariaId')
-                                <div class="invalid-feedback">{{ $message }}</div>
-                            @enderror
-                        </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">
+                                    <iconify-icon icon="solar:shop-bold" class="me-1"></iconify-icon>
+                                    Sede Mittente *
+                                </label>
+                                <select class="form-select form-select-lg @error('sedeMittenteId') is-invalid @enderror" 
+                                        wire:model.live="sedeMittenteId">
+                                    <option value="">Seleziona sede mittente...</option>
+                                    @foreach($this->sedi as $sede)
+                                        <option value="{{ $sede->id }}">{{ $sede->nome }}</option>
+                                    @endforeach
+                                </select>
+                                @error('sedeMittenteId')
+                                    <div class="invalid-feedback">{{ $message }}</div>
+                                @enderror
+                            </div>
 
-                        <div class="mb-3">
-                            <label class="form-label fw-semibold">Note</label>
-                            <textarea class="form-control @error('noteDeposito') is-invalid @enderror" 
-                                      wire:model="noteDeposito" 
-                                      rows="3" 
-                                      placeholder="Note aggiuntive..."></textarea>
-                            @error('noteDeposito')
-                                <div class="invalid-feedback">{{ $message }}</div>
-                            @enderror
-                        </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">
+                                    <iconify-icon icon="solar:map-point-bold" class="me-1"></iconify-icon>
+                                    Sede Destinataria *
+                                </label>
+                                <select class="form-select form-select-lg @error('sedeDestinatariaId') is-invalid @enderror" 
+                                        wire:model.live="sedeDestinatariaId">
+                                    <option value="">Seleziona sede destinataria...</option>
+                                    @foreach($this->sedi as $sede)
+                                        <option value="{{ $sede->id }}">{{ $sede->nome }}</option>
+                                    @endforeach
+                                </select>
+                                @error('sedeDestinatariaId')
+                                    <div class="invalid-feedback">{{ $message }}</div>
+                                @enderror
+                                @if($sedeMittenteId && $sedeDestinatariaId && $sedeMittenteId == $sedeDestinatariaId)
+                                    <div class="text-danger small mt-1">
+                                        <iconify-icon icon="solar:danger-circle-bold" class="me-1"></iconify-icon>
+                                        La sede destinataria deve essere diversa dalla mittente
+                                    </div>
+                                @endif
+                            </div>
 
-                        <div class="alert alert-info">
-                            <iconify-icon icon="solar:info-circle-bold" class="me-2"></iconify-icon>
-                            Dopo la creazione potrai aggiungere articoli e prodotti finiti al deposito.
-                        </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">
+                                    <iconify-icon icon="solar:notes-bold" class="me-1"></iconify-icon>
+                                    Note (opzionale)
+                                </label>
+                                <textarea class="form-control @error('noteDeposito') is-invalid @enderror" 
+                                          wire:model="noteDeposito" 
+                                          rows="3" 
+                                          placeholder="Note aggiuntive sul deposito..."></textarea>
+                                @error('noteDeposito')
+                                    <div class="invalid-feedback">{{ $message }}</div>
+                                @enderror
+                            </div>
+
+                            <div class="alert alert-warning">
+                                <iconify-icon icon="solar:info-circle-bold" class="me-2"></iconify-icon>
+                                <strong>Nota:</strong> Il deposito sarà creato con durata di <strong>1 anno</strong> dalla data di creazione. 
+                                Dopo la creazione potrai aggiungere articoli e prodotti finiti dal pannello di gestione.
+                            </div>
+                            
+                        @elseif($stepCreazioneDeposito == 2)
+                            {{-- STEP 2: Anteprima --}}
+                            @php
+                                $sedeMittente = $this->sedi->firstWhere('id', $sedeMittenteId);
+                                $sedeDestinataria = $this->sedi->firstWhere('id', $sedeDestinatariaId);
+                                $dataInvio = now();
+                                $dataScadenza = now()->addYear();
+                            @endphp
+                            
+                            <div class="alert alert-success">
+                                <iconify-icon icon="solar:check-circle-bold" class="me-2"></iconify-icon>
+                                <strong>Riepilogo informazioni deposito</strong>
+                            </div>
+
+                            <div class="card">
+                                <div class="card-header bg-light-primary">
+                                    <h6 class="card-title mb-0">
+                                        <iconify-icon icon="solar:box-bold-duotone" class="me-1"></iconify-icon>
+                                        Dettagli Deposito
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <p class="mb-2">
+                                                <strong class="text-primary">
+                                                    <iconify-icon icon="solar:shop-bold" class="me-1"></iconify-icon>
+                                                    Sede Mittente:
+                                                </strong><br>
+                                                <span class="ms-4">{{ $sedeMittente->nome ?? 'N/A' }}</span>
+                                            </p>
+                                            <p class="mb-2">
+                                                <strong class="text-primary">
+                                                    <iconify-icon icon="solar:map-point-bold" class="me-1"></iconify-icon>
+                                                    Sede Destinataria:
+                                                </strong><br>
+                                                <span class="ms-4">{{ $sedeDestinataria->nome ?? 'N/A' }}</span>
+                                            </p>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <p class="mb-2">
+                                                <strong>Data Invio:</strong><br>
+                                                <span class="badge bg-light-primary text-primary">{{ $dataInvio->format('d/m/Y') }}</span>
+                                            </p>
+                                            <p class="mb-2">
+                                                <strong>Data Scadenza:</strong><br>
+                                                <span class="badge bg-light-warning text-warning">{{ $dataScadenza->format('d/m/Y') }}</span>
+                                                <small class="text-muted"> (1 anno)</small>
+                                            </p>
+                                            <p class="mb-2">
+                                                <strong>Stato:</strong><br>
+                                                <span class="badge bg-success">Attivo</span>
+                                            </p>
+                                        </div>
+                                    </div>
+                                    
+                                    @if($noteDeposito)
+                                        <hr>
+                                        <p class="mb-0">
+                                            <strong>Note:</strong><br>
+                                            <span class="text-muted">{{ $noteDeposito }}</span>
+                                        </p>
+                                    @endif
+                                </div>
+                            </div>
+
+                            <div class="alert alert-info mt-3">
+                                <iconify-icon icon="solar:info-circle-bold" class="me-2"></iconify-icon>
+                                <strong>Prossimi passi dopo la creazione:</strong>
+                                <ol class="mb-0 mt-2">
+                                    <li>Verrai reindirizzato alla pagina di gestione del deposito</li>
+                                    <li>Potrai aggiungere articoli e prodotti finiti dal pannello "Aggiungi Articoli"</li>
+                                    <li>Potrai generare il DDT di invio quando pronto</li>
+                                </ol>
+                            </div>
+                        @endif
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" wire:click="chiudiNuovoDepositoModal">
+                            <iconify-icon icon="solar:close-circle-bold" class="me-1"></iconify-icon>
                             Annulla
                         </button>
-                        <button type="button" class="btn btn-primary" wire:click="creaDeposito">
-                            <iconify-icon icon="solar:check-circle-bold" class="me-1"></iconify-icon>
-                            Crea Deposito
-                        </button>
+                        
+                        @if($stepCreazioneDeposito == 1)
+                            <button type="button" 
+                                    class="btn btn-primary btn-lg" 
+                                    wire:click="vaiAdAnteprima"
+                                    wire:loading.attr="disabled"
+                                    @if(!$this->canContinue) disabled @endif>
+                                <iconify-icon icon="solar:arrow-right-bold" class="me-1"></iconify-icon>
+                                <span wire:loading.remove wire:target="vaiAdAnteprima">Continua → Anteprima</span>
+                                <span wire:loading wire:target="vaiAdAnteprima">
+                                    <span class="spinner-border spinner-border-sm me-2"></span>
+                                    Verifica...
+                                </span>
+                            </button>
+                        @elseif($stepCreazioneDeposito == 2)
+                            <button type="button" class="btn btn-outline-secondary" wire:click="tornaAllInfo">
+                                <iconify-icon icon="solar:arrow-left-bold" class="me-1"></iconify-icon>
+                                Indietro
+                            </button>
+                            <button type="button" 
+                                    class="btn btn-primary btn-lg" 
+                                    wire:click="creaDeposito"
+                                    wire:loading.attr="disabled">
+                                <iconify-icon icon="solar:check-circle-bold" class="me-1"></iconify-icon>
+                                <span wire:loading.remove wire:target="creaDeposito">Crea Deposito</span>
+                                <span wire:loading wire:target="creaDeposito">
+                                    <span class="spinner-border spinner-border-sm me-2"></span>
+                                    Creazione in corso...
+                                </span>
+                            </button>
+                        @endif
                     </div>
                 </div>
             </div>

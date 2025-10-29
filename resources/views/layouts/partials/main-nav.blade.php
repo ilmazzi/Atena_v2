@@ -52,6 +52,15 @@
                 </a>
             </li>
 
+            <li class="nav-item">
+                <a class="nav-link" href="{{ route('amministrazione-magazzino.index') }}">
+                         <span class="nav-icon">
+                        <iconify-icon icon="solar:chart-2-bold-duotone"></iconify-icon>
+                         </span>
+                    <span class="nav-text">Amministrazione Magazzini</span>
+                </a>
+            </li>
+
         <li class="nav-item">
             <a class="nav-link" href="{{ route('vetrine.index') }}">
                      <span class="nav-icon">
