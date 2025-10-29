@@ -154,6 +154,7 @@
                     <thead class="table-light">
                         <tr>
                             <th>Codice</th>
+                            <th>DDT</th>
                             <th>Sedi</th>
                             <th>Data Invio</th>
                             <th>Scadenza</th>
@@ -168,6 +169,31 @@
                             <tr>
                                 <td>
                                     <span class="fw-bold text-primary">{{ $deposito->codice }}</span>
+                                </td>
+                                <td>
+                                    <div class="d-flex flex-column gap-1">
+                                        @if($deposito->ddt_invio_id && $deposito->ddtInvio)
+                                            <div class="d-flex align-items-center gap-1">
+                                                <iconify-icon icon="solar:export-bold" class="text-primary small"></iconify-icon>
+                                                <a href="{{ route('ddt-deposito.stampa', $deposito->ddt_invio_id) }}" 
+                                                   class="text-primary small fw-bold" target="_blank" title="DDT Invio">
+                                                    {{ $deposito->ddtInvio->numero }}
+                                                </a>
+                                            </div>
+                                        @endif
+                                        @if($deposito->ddt_reso_id && $deposito->ddtReso)
+                                            <div class="d-flex align-items-center gap-1">
+                                                <iconify-icon icon="solar:import-bold" class="text-warning small"></iconify-icon>
+                                                <a href="{{ route('ddt-deposito.stampa', $deposito->ddt_reso_id) }}" 
+                                                   class="text-warning small fw-bold" target="_blank" title="DDT Reso">
+                                                    {{ $deposito->ddtReso->numero }}
+                                                </a>
+                                            </div>
+                                        @endif
+                                        @if(!$deposito->ddt_invio_id && !$deposito->ddt_reso_id)
+                                            <span class="text-muted small">-</span>
+                                        @endif
+                                    </div>
                                 </td>
                                 <td>
                                     <div class="d-flex align-items-center">

@@ -427,32 +427,17 @@ class ContoDepositoService
      * Genera DDT di invio per il deposito
      * 
      * @param ContoDeposito $contoDeposito
-     * @param string|null $numeroPersonalizzato Numero DDT personalizzato (opzionale, se null genera automatico)
      * @return DdtDeposito
      */
-    public function generaDdtInvio(ContoDeposito $contoDeposito, ?string $numeroPersonalizzato = null): DdtDeposito
+    public function generaDdtInvio(ContoDeposito $contoDeposito): DdtDeposito
     {
-        return DB::transaction(function () use ($contoDeposito, $numeroPersonalizzato) {
-            // Debug: verifica data_invio
-            \Log::info('🔍 DEBUG generaDdtInvio', [
-                'conto_deposito_id' => $contoDeposito->id,
-                'data_invio' => $contoDeposito->data_invio,
-                'data_invio_type' => gettype($contoDeposito->data_invio),
-                'data_invio_year' => $contoDeposito->data_invio ? $contoDeposito->data_invio->year : 'NULL',
-                'numero_personalizzato' => $numeroPersonalizzato
-            ]);
-
+        return DB::transaction(function () use ($contoDeposito) {
             // Usa data_invio se disponibile, altrimenti oggi
             $dataDocumento = $contoDeposito->data_invio ?? now()->toDateString();
             $anno = $contoDeposito->data_invio ? $contoDeposito->data_invio->year : now()->year;
 
-            // Numero DDT: usa quello personalizzato se fornito, altrimenti genera automatico
-            $numeroDdt = $numeroPersonalizzato ?: DdtDeposito::generaNumeroDdt();
-
-            // Verifica che il numero non sia già usato
-            if (DdtDeposito::where('numero', $numeroDdt)->exists()) {
-                throw new \Exception("Il numero DDT {$numeroDdt} è già utilizzato. Scegli un altro numero.");
-            }
+            // Genera numero DDT progressivo automatico
+            $numeroDdt = DdtDeposito::generaNumeroDdt();
 
             // Crea DDT Deposito
             $ddtDeposito = DdtDeposito::create([
@@ -471,11 +456,6 @@ class ContoDepositoService
                 'creato_da' => auth()->id(),
             ]);
 
-            \Log::info('✅ DDT Deposito creato', [
-                'ddt_id' => $ddtDeposito->id,
-                'numero' => $ddtDeposito->numero,
-                'data_documento' => $ddtDeposito->data_documento
-            ]);
 
             // Aggiungi dettagli per ogni movimento di invio
             $movimentiInvio = $contoDeposito->movimenti()
@@ -509,19 +489,13 @@ class ContoDepositoService
      * Genera DDT di reso per il deposito
      * 
      * @param ContoDeposito $contoDeposito
-     * @param string|null $numeroPersonalizzato Numero DDT personalizzato (opzionale, se null genera automatico)
      * @return DdtDeposito
      */
-    public function generaDdtReso(ContoDeposito $contoDeposito, ?string $numeroPersonalizzato = null): DdtDeposito
+    public function generaDdtReso(ContoDeposito $contoDeposito): DdtDeposito
     {
-        return DB::transaction(function () use ($contoDeposito, $numeroPersonalizzato) {
-            // Numero DDT: usa quello personalizzato se fornito, altrimenti genera automatico
-            $numeroDdt = $numeroPersonalizzato ?: DdtDeposito::generaNumeroDdt();
-
-            // Verifica che il numero non sia già usato
-            if (DdtDeposito::where('numero', $numeroDdt)->exists()) {
-                throw new \Exception("Il numero DDT {$numeroDdt} è già utilizzato. Scegli un altro numero.");
-            }
+        return DB::transaction(function () use ($contoDeposito) {
+            // Genera numero DDT progressivo automatico
+            $numeroDdt = DdtDeposito::generaNumeroDdt();
 
             // Crea DDT Deposito per reso
             $ddtDeposito = DdtDeposito::create([
