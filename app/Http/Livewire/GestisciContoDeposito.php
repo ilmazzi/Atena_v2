@@ -30,6 +30,12 @@ class GestisciContoDeposito extends Component
     // Modali
     public $showAggiungiArticoliModal = false;
     public $showRegistraVenditaModal = false;
+    public $showDdtInvioModal = false;
+    public $showDdtResoModal = false;
+    
+    // Numero DDT personalizzato
+    public $numeroDdtInvio = '';
+    public $numeroDdtReso = '';
 
     // Form aggiunta articoli
     public $search = '';
@@ -73,6 +79,10 @@ class GestisciContoDeposito extends Component
         // Selezioni - OPZIONALI
         'articoliSelezionatiVendita' => 'nullable|array',
         'prodottiFinitiSelezionatiVendita' => 'nullable|array',
+        
+        // Numero DDT personalizzato - OPZIONALE
+        'numeroDdtInvio' => 'nullable|string|max:50',
+        'numeroDdtReso' => 'nullable|string|max:50',
     ];
 
     public function mount($depositoId)
@@ -548,16 +558,39 @@ class GestisciContoDeposito extends Component
     // ACTIONS - DDT
     // ==========================================
 
+    public function apriDdtInvioModal()
+    {
+        // Proponi numero automatico come default
+        $this->numeroDdtInvio = \App\Models\DdtDeposito::generaNumeroDdt();
+        $this->showDdtInvioModal = true;
+    }
+
+    public function chiudiDdtInvioModal()
+    {
+        $this->showDdtInvioModal = false;
+        $this->numeroDdtInvio = '';
+        $this->resetValidation();
+    }
+
     public function generaDdtInvio()
     {
+        // Valida solo se è stato inserito un numero
+        if ($this->numeroDdtInvio) {
+            $this->validate([
+                'numeroDdtInvio' => 'required|string|max:50|unique:ddt_depositi,numero'
+            ]);
+        }
+
         try {
             $service = new ContoDepositoService();
-            $ddtDeposito = $service->generaDdtInvio($this->deposito);
+            $numeroDdt = trim($this->numeroDdtInvio) ?: null; // Se vuoto, genera automatico
+            $ddtDeposito = $service->generaDdtInvio($this->deposito, $numeroDdt);
             
             // Aggiorna deposito
             $this->deposito->refresh();
 
             session()->flash('success', "DDT di invio {$ddtDeposito->numero} generato con successo");
+            $this->chiudiDdtInvioModal();
             
             // Redirect alla stampa DDT Deposito
             return redirect()->route('ddt-deposito.stampa', $ddtDeposito->id);
@@ -567,21 +600,44 @@ class GestisciContoDeposito extends Component
         }
     }
 
+    public function apriDdtResoModal()
+    {
+        // Proponi numero automatico come default
+        $this->numeroDdtReso = \App\Models\DdtDeposito::generaNumeroDdt();
+        $this->showDdtResoModal = true;
+    }
+
+    public function chiudiDdtResoModal()
+    {
+        $this->showDdtResoModal = false;
+        $this->numeroDdtReso = '';
+        $this->resetValidation();
+    }
+
     public function generaDdtReso()
     {
+        // Valida solo se è stato inserito un numero
+        if ($this->numeroDdtReso) {
+            $this->validate([
+                'numeroDdtReso' => 'required|string|max:50|unique:ddt_depositi,numero'
+            ]);
+        }
+
         try {
             $service = new ContoDepositoService();
             
             // Prima gestisci il reso automatico
             $movimentiReso = $service->gestisciResoScadenza($this->deposito);
             
-            // Poi genera il DDT
-            $ddtDeposito = $service->generaDdtReso($this->deposito);
+            // Poi genera il DDT con numero personalizzato
+            $numeroDdt = trim($this->numeroDdtReso) ?: null; // Se vuoto, genera automatico
+            $ddtDeposito = $service->generaDdtReso($this->deposito, $numeroDdt);
             
             // Aggiorna deposito
             $this->deposito->refresh();
 
             session()->flash('success', "DDT di reso {$ddtDeposito->numero} generato per {$movimentiReso->count()} articoli");
+            $this->chiudiDdtResoModal();
             
             // Redirect alla stampa DDT Deposito
             return redirect()->route('ddt-deposito.stampa', $ddtDeposito->id);

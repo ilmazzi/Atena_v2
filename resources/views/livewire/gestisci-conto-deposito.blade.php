@@ -22,14 +22,14 @@
                         </button>
                         
                         @if($deposito->articoli_inviati > 0 && !$deposito->ddt_invio_id)
-                            <button class="btn btn-success" wire:click="generaDdtInvio">
+                            <button class="btn btn-success" wire:click="apriDdtInvioModal">
                                 <iconify-icon icon="solar:document-add-bold" class="me-1"></iconify-icon>
                                 Genera DDT Invio
                             </button>
                         @endif
                         
                         @if($deposito->ddt_invio_id)
-                            <a href="{{ route('ddt.stampa', $deposito->ddt_invio_id) }}" class="btn btn-info" target="_blank">
+                            <a href="{{ route('ddt-deposito.stampa', $deposito->ddt_invio_id) }}" class="btn btn-info" target="_blank">
                                 <iconify-icon icon="solar:printer-bold" class="me-1"></iconify-icon>
                                 Stampa DDT Invio
                             </a>
@@ -37,14 +37,14 @@
                     @endif
                     
                     @if($deposito->stato === 'attivo' && $deposito->isScaduto())
-                        <button class="btn btn-warning" wire:click="generaDdtReso">
+                        <button class="btn btn-warning" wire:click="apriDdtResoModal">
                             <iconify-icon icon="solar:import-bold" class="me-1"></iconify-icon>
                             Genera DDT Reso
                         </button>
                     @endif
                     
                     @if($deposito->ddt_reso_id)
-                        <a href="{{ route('ddt.stampa', $deposito->ddt_reso_id) }}" class="btn btn-info" target="_blank">
+                        <a href="{{ route('ddt-deposito.stampa', $deposito->ddt_reso_id) }}" class="btn btn-info" target="_blank">
                             <iconify-icon icon="solar:printer-bold" class="me-1"></iconify-icon>
                             Stampa DDT Reso
                         </a>
@@ -90,7 +90,7 @@
                             
                             @if($deposito->ddt_reso_id)
                                 <p><strong>DDT Reso:</strong> 
-                                    <a href="{{ route('ddt.stampa', $deposito->ddt_reso_id) }}" class="text-primary" target="_blank">
+                                    <a href="{{ route('ddt-deposito.stampa', $deposito->ddt_reso_id) }}" class="text-primary" target="_blank">
                                         {{ $deposito->ddtReso->numero ?? 'N/A' }}
                                     </a>
                                 </p>
@@ -834,8 +834,8 @@
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                        
+</div>
+
                         {{-- Note --}}
                         <div class="row">
                             <div class="col-12">
@@ -863,6 +863,113 @@
                                 @if(empty($articoliSelezionatiVendita) && empty($prodottiFinitiSelezionatiVendita)) disabled @endif>
                             <iconify-icon icon="solar:cart-check-bold" class="me-1"></iconify-icon>
                             Registra Vendita Multipla
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-backdrop fade show"></div>
+    @endif
+
+    {{-- Modal Genera DDT Invio --}}
+    @if($showDdtInvioModal)
+        <div class="modal fade show" style="display: block;" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            <iconify-icon icon="solar:document-add-bold-duotone" class="me-2"></iconify-icon>
+                            Genera DDT di Invio
+                        </h5>
+                        <button type="button" wire:click="chiudiDdtInvioModal" class="btn-close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Numero DDT</label>
+                            <input type="text" class="form-control @error('numeroDdtInvio') is-invalid @enderror" 
+                                   wire:model="numeroDdtInvio"
+                                   placeholder="Lascia vuoto per generazione automatica">
+                            <div class="form-text">
+                                <iconify-icon icon="solar:info-circle-bold" class="me-1"></iconify-icon>
+                                Se lasci vuoto, verrà generato automaticamente: <code>{{ \App\Models\DdtDeposito::generaNumeroDdt() }}</code>
+                            </div>
+                            @error('numeroDdtInvio')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+
+                        <div class="alert alert-info">
+                            <iconify-icon icon="solar:info-circle-bold" class="me-2"></iconify-icon>
+                            <strong>Informazioni:</strong>
+                            <ul class="mb-0 mt-2">
+                                <li>Il DDT verrà creato per <strong>{{ $deposito->articoli_inviati }}</strong> articoli inviati</li>
+                                <li>Valore totale: <strong>€{{ number_format($deposito->valore_totale_invio ?? 0, 2, ',', '.') }}</strong></li>
+                                <li>Da: <strong>{{ $deposito->sedeMittente->nome }}</strong></li>
+                                <li>A: <strong>{{ $deposito->sedeDestinataria->nome }}</strong></li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" wire:click="chiudiDdtInvioModal">
+                            Annulla
+                        </button>
+                        <button type="button" class="btn btn-success" wire:click="generaDdtInvio">
+                            <iconify-icon icon="solar:document-add-bold" class="me-1"></iconify-icon>
+                            Genera DDT
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-backdrop fade show"></div>
+    @endif
+
+    {{-- Modal Genera DDT Reso --}}
+    @if($showDdtResoModal)
+        <div class="modal fade show" style="display: block;" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            <iconify-icon icon="solar:import-bold-duotone" class="me-2"></iconify-icon>
+                            Genera DDT di Reso
+                        </h5>
+                        <button type="button" wire:click="chiudiDdtResoModal" class="btn-close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Numero DDT</label>
+                            <input type="text" class="form-control @error('numeroDdtReso') is-invalid @enderror" 
+                                   wire:model="numeroDdtReso"
+                                   placeholder="Lascia vuoto per generazione automatica">
+                            <div class="form-text">
+                                <iconify-icon icon="solar:info-circle-bold" class="me-1"></iconify-icon>
+                                Se lasci vuoto, verrà generato automaticamente: <code>{{ \App\Models\DdtDeposito::generaNumeroDdt() }}</code>
+                            </div>
+                            @error('numeroDdtReso')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+
+                        <div class="alert alert-warning">
+                            <iconify-icon icon="solar:info-circle-bold" class="me-2"></iconify-icon>
+                            <strong>Attenzione:</strong>
+                            <ul class="mb-0 mt-2">
+                                <li>Il deposito è <strong>scaduto</strong> e verrà automaticamente chiuso</li>
+                                <li>Articoli rimanenti: <strong>{{ $deposito->getArticoliRimanenti() }}</strong></li>
+                                <li>Valore da restituire: <strong>€{{ number_format($deposito->getValoreRimanente(), 2, ',', '.') }}</strong></li>
+                                <li>Da: <strong>{{ $deposito->sedeDestinataria->nome }}</strong> (ora mittente)</li>
+                                <li>A: <strong>{{ $deposito->sedeMittente->nome }}</strong> (ora destinatario)</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" wire:click="chiudiDdtResoModal">
+                            Annulla
+                        </button>
+                        <button type="button" class="btn btn-warning" wire:click="generaDdtReso">
+                            <iconify-icon icon="solar:import-bold" class="me-1"></iconify-icon>
+                            Genera DDT Reso
                         </button>
                     </div>
                 </div>
