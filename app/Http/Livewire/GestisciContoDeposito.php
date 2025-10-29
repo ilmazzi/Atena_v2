@@ -30,6 +30,11 @@ class GestisciContoDeposito extends Component
     // Modali
     public $showAggiungiArticoliModal = false;
     public $showRegistraVenditaModal = false;
+    public $showResoManualeModal = false;
+    
+    // Form reso manuale
+    public $articoliSelezionatiReso = [];
+    public $prodottiFinitiSelezionatiReso = [];
 
     // Form aggiunta articoli
     public $search = '';
@@ -572,22 +577,127 @@ class GestisciContoDeposito extends Component
         try {
             $service = new ContoDepositoService();
             
-            // Prima gestisci il reso automatico
-            $movimentiReso = $service->gestisciResoScadenza($this->deposito);
+            // Se il deposito è scaduto, gestisci il reso automatico di tutti i rimanenti
+            if ($this->deposito->isScaduto() && $this->deposito->getArticoliRimanenti() > 0) {
+                $movimentiReso = $service->gestisciResoScadenza($this->deposito);
+                $this->deposito->refresh();
+            }
             
-            // Poi genera il DDT
+            // Genera il DDT (include tutti i movimenti reso, sia manuali che automatici)
             $ddtDeposito = $service->generaDdtReso($this->deposito);
             
             // Aggiorna deposito
             $this->deposito->refresh();
 
-            session()->flash('success', "DDT di reso {$ddtDeposito->numero} generato per {$movimentiReso->count()} articoli");
+            $articoliTotali = $ddtDeposito->articoli_totali;
+            session()->flash('success', "DDT di reso {$ddtDeposito->numero} generato per {$articoliTotali} articoli");
             
             // Redirect alla stampa DDT Deposito
             return redirect()->route('ddt-deposito.stampa', $ddtDeposito->id);
 
         } catch (\Exception $e) {
             session()->flash('error', 'Errore durante la generazione DDT reso: ' . $e->getMessage());
+        }
+    }
+
+    // ==========================================
+    // ACTIONS - RESO MANUALE
+    // ==========================================
+
+    public function apriResoManualeModal()
+    {
+        // NON resettare le selezioni: permette di selezionare prima di aprire il modal
+        $this->showResoManualeModal = true;
+    }
+
+    public function chiudiResoManualeModal()
+    {
+        $this->showResoManualeModal = false;
+        $this->articoliSelezionatiReso = [];
+        $this->prodottiFinitiSelezionatiReso = [];
+        $this->resetValidation();
+    }
+
+    public function toggleArticoloReso($articoloId)
+    {
+        if (isset($this->articoliSelezionatiReso[$articoloId])) {
+            unset($this->articoliSelezionatiReso[$articoloId]);
+        } else {
+            // Cerca l'articolo nei dati del deposito
+            $articoliDeposito = $this->articoliInDeposito;
+            $articoloData = null;
+            
+            foreach ($articoliDeposito as $data) {
+                if (isset($data['articolo']) && $data['articolo']->id == $articoloId) {
+                    $articoloData = $data;
+                    break;
+                }
+            }
+            
+            if ($articoloData && isset($articoloData['articolo'])) {
+                $this->articoliSelezionatiReso[$articoloId] = [
+                    'articolo_id' => $articoloId,
+                    'quantita' => min(1, $articoloData['quantita']),
+                    'max_quantita' => $articoloData['quantita'],
+                    'costo_unitario' => $articoloData['costo_unitario'] ?? 0,
+                ];
+            }
+        }
+    }
+
+    public function toggleProdottoFinitoReso($pfId)
+    {
+        if (isset($this->prodottiFinitiSelezionatiReso[$pfId])) {
+            unset($this->prodottiFinitiSelezionatiReso[$pfId]);
+        } else {
+            $pfData = $this->prodottiFinitiInDeposito->firstWhere('prodotto_finito.id', $pfId);
+            if ($pfData) {
+                $this->prodottiFinitiSelezionatiReso[$pfId] = [
+                    'prodotto_finito_id' => $pfId,
+                    'costo_unitario' => $pfData['costo_unitario'],
+                ];
+            }
+        }
+    }
+
+    public function eseguiResoManuale()
+    {
+        if (empty($this->articoliSelezionatiReso) && empty($this->prodottiFinitiSelezionatiReso)) {
+            session()->flash('error', 'Seleziona almeno un articolo o prodotto finito da restituire');
+            return;
+        }
+
+        // Validazione quantità
+        foreach ($this->articoliSelezionatiReso as $articoloId => $articoloData) {
+            if ($articoloData['quantita'] < 1 || $articoloData['quantita'] > $articoloData['max_quantita']) {
+                session()->flash('error', "Quantità non valida per l'articolo selezionato");
+                return;
+            }
+        }
+
+        try {
+            $service = new ContoDepositoService();
+            
+            // Prepara array per il Service
+            $articoli = array_values($this->articoliSelezionatiReso);
+            $prodottiFiniti = array_values($this->prodottiFinitiSelezionatiReso);
+            
+            $movimentiReso = $service->gestisciResoManuale(
+                $this->deposito,
+                $articoli,
+                $prodottiFiniti
+            );
+            
+            // Aggiorna deposito
+            $this->deposito->refresh();
+            
+            $totaleReso = $movimentiReso->count();
+            session()->flash('success', "Reso effettuato con successo per {$totaleReso} articolo/i. Vuoi generare il DDT di reso?");
+            
+            $this->chiudiResoManualeModal();
+
+        } catch (\Exception $e) {
+            session()->flash('error', 'Errore durante il reso: ' . $e->getMessage());
         }
     }
 
@@ -608,6 +718,21 @@ class GestisciContoDeposito extends Component
     public function getTotaleSelezionati(): int
     {
         return count($this->articoliSelezionati) + count($this->prodottiFinitiSelezionati);
+    }
+
+    public function isArticoloSelezionatoReso($articoloId): bool
+    {
+        return isset($this->articoliSelezionatiReso[$articoloId]);
+    }
+
+    public function isProdottoFinitoSelezionatoReso($pfId): bool
+    {
+        return isset($this->prodottiFinitiSelezionatiReso[$pfId]);
+    }
+
+    public function getTotaleSelezionatiReso(): int
+    {
+        return count($this->articoliSelezionatiReso) + count($this->prodottiFinitiSelezionatiReso);
     }
 
     public function render()

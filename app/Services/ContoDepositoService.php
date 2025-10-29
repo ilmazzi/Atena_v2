@@ -9,6 +9,7 @@ use App\Models\ProdottoFinito;
 use App\Models\DdtDeposito;
 use App\Models\DdtDepositoDettaglio;
 use App\Models\Fattura;
+use App\Services\NotificaService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -101,7 +102,25 @@ class ContoDepositoService
         $costoUnitario = $costoUnitario ?? $articolo->prezzo_acquisto ?? 0;
 
         return DB::transaction(function () use ($contoDeposito, $articolo, $quantita, $costoUnitario) {
-            // Crea movimento
+            // Se deposito inter-società, associa articolo al magazzino CD della società destinataria
+            // SALVA il magazzino originale nei dettagli del movimento
+            $magazzinoOriginaleId = $articolo->categoria_merceologica_id;
+            
+            if ($contoDeposito->isInterSocieta()) {
+                $societaDestinataria = $contoDeposito->getSocietaDestinataria();
+                if ($societaDestinataria) {
+                    $magazzinoCD = $societaDestinataria->getMagazzinoContoDeposito();
+                    if ($magazzinoCD) {
+                        // Associa articolo al magazzino CD (mantiene sede_id originale)
+                        $articolo->update([
+                            'categoria_merceologica_id' => $magazzinoCD->id,
+                            // sede_id rimane invariata (società mittente)
+                        ]);
+                    }
+                }
+            }
+            
+            // Crea movimento con dettagli magazzino originale
             $movimento = MovimentoDeposito::creaInvio(
                 $contoDeposito,
                 $articolo,
@@ -110,6 +129,15 @@ class ContoDepositoService
                 null, // DDT verrà associato successivamente
                 "Invio in conto deposito {$contoDeposito->codice}"
             );
+            
+            // Salva magazzino originale nei dettagli del movimento (per reso)
+            if (isset($magazzinoOriginaleId)) {
+                $movimento->update([
+                    'dettagli' => array_merge($movimento->dettagli ?? [], [
+                        'magazzino_originale_id' => $magazzinoOriginaleId,
+                    ])
+                ]);
+            }
 
             // Aggiorna articolo
             $articolo->aggiornaQuantitaInDeposito();
@@ -136,6 +164,10 @@ class ContoDepositoService
         $costoUnitario = $costoUnitario ?? $prodottoFinito->costo_totale ?? 0;
 
         return DB::transaction(function () use ($contoDeposito, $prodottoFinito, $costoUnitario) {
+            // Se deposito inter-società, PF rimane nella sede originale ma viene associato
+            // al magazzino CD della società destinataria (per visualizzazione)
+            // NOTA: I PF potrebbero non avere categoria_merceologica_id, verificare struttura
+            
             // Crea movimento
             $movimento = MovimentoDeposito::creaInvio(
                 $contoDeposito,
@@ -230,6 +262,17 @@ class ContoDepositoService
 
             // Aggiorna statistiche deposito
             $contoDeposito->aggiornaStatistiche();
+            
+            // Invia notifica vendita solo se deposito inter-società
+            if ($contoDeposito->isInterSocieta()) {
+                try {
+                    $notificaService = new NotificaService();
+                    $notificaService->notificaVendita($contoDeposito, $movimento);
+                } catch (\Exception $e) {
+                    \Log::warning("Errore creazione notifica vendita: " . $e->getMessage());
+                    // Non bloccare il processo per errori di notifica
+                }
+            }
 
             return $movimento;
         });
@@ -286,6 +329,184 @@ class ContoDepositoService
             // Aggiorna stato deposito
             $contoDeposito->update(['stato' => 'chiuso']);
             $contoDeposito->aggiornaStatistiche();
+
+            return $movimentiReso;
+        });
+    }
+
+    /**
+     * Gestisce il reso manuale di articoli specifici (prima della scadenza)
+     * 
+     * @param ContoDeposito $contoDeposito
+     * @param array $articoli Array di ['articolo_id' => id, 'quantita' => qta]
+     * @param array $prodottiFiniti Array di ['prodotto_finito_id' => id]
+     * @return Collection Movimenti reso creati
+     */
+    public function gestisciResoManuale(ContoDeposito $contoDeposito, array $articoli = [], array $prodottiFiniti = []): Collection
+    {
+        if (empty($articoli) && empty($prodottiFiniti)) {
+            throw new \InvalidArgumentException('Seleziona almeno un articolo o prodotto finito da restituire');
+        }
+
+        return DB::transaction(function () use ($contoDeposito, $articoli, $prodottiFiniti) {
+            $movimentiReso = collect();
+
+            // Reso articoli selezionati
+            foreach ($articoli as $articoloData) {
+                $articolo = Articolo::findOrFail($articoloData['articolo_id']);
+                
+                // Verifica che l'articolo sia in deposito
+                if ($articolo->conto_deposito_corrente_id !== $contoDeposito->id) {
+                    throw new \Exception("L'articolo {$articolo->codice} non è in questo deposito");
+                }
+
+                // Verifica quantità disponibile
+                $quantitaDisponibile = $articolo->quantita_in_deposito ?? 0;
+                $quantitaDaRestituire = $articoloData['quantita'] ?? $quantitaDisponibile;
+                
+                if ($quantitaDaRestituire > $quantitaDisponibile) {
+                    throw new \Exception("Quantità richiesta ({$quantitaDaRestituire}) superiore a quella disponibile ({$quantitaDisponibile}) per {$articolo->codice}");
+                }
+
+                // Calcola costo unitario (dal movimento di invio o costo totale articolo)
+                $movimentoInvio = $contoDeposito->movimenti()
+                    ->where('articolo_id', $articolo->id)
+                    ->where('tipo_movimento', 'invio')
+                    ->first();
+                
+                $costoUnitario = $movimentoInvio ? $movimentoInvio->costo_unitario : ($articolo->costo_totale ?? 0);
+
+                // Crea movimento reso
+                $movimento = MovimentoDeposito::create([
+                    'conto_deposito_id' => $contoDeposito->id,
+                    'articolo_id' => $articolo->id,
+                    'tipo_movimento' => 'reso',
+                    'quantita' => $quantitaDaRestituire,
+                    'costo_unitario' => $costoUnitario,
+                    'costo_totale' => $quantitaDaRestituire * $costoUnitario,
+                    'data_movimento' => now()->toDateString(),
+                    'note' => "Reso manuale articolo {$articolo->codice}",
+                    'eseguito_da' => auth()->id(),
+                ]);
+
+                // Aggiorna quantità in deposito dell'articolo
+                $articolo->quantita_in_deposito = max(0, $quantitaDisponibile - $quantitaDaRestituire);
+                
+                // Se quantità = 0, rimuovi il deposito corrente
+                if ($articolo->quantita_in_deposito == 0) {
+                    $articolo->conto_deposito_corrente_id = null;
+                }
+                
+                // Ripristina magazzino originale se deposito inter-società (sempre, anche se reso parziale)
+                if ($contoDeposito->isInterSocieta()) {
+                    // Recupera magazzino originale dal movimento di invio
+                    $movimentoInvio = $contoDeposito->movimenti()
+                        ->where('articolo_id', $articolo->id)
+                        ->where('tipo_movimento', 'invio')
+                        ->first();
+                    
+                    $magazzinoOriginaleId = null;
+                    
+                    if ($movimentoInvio && isset($movimentoInvio->dettagli['magazzino_originale_id'])) {
+                        // Usa magazzino salvato nei dettagli
+                        $magazzinoOriginaleId = $movimentoInvio->dettagli['magazzino_originale_id'];
+                    } else {
+                        // Fallback: trova magazzino nella sede mittente (primo disponibile)
+                        $sedeMittente = $contoDeposito->sedeMittente;
+                        if ($sedeMittente) {
+                            // Cerca magazzini attivi nella sede mittente (escludi CD)
+                            $magazzinoOriginale = $sedeMittente->categorieMerceologiche()
+                                ->where('attivo', true)
+                                ->where('codice', 'NOT LIKE', 'CD-%') // Escludi magazzini CD
+                                ->orderBy('id')
+                                ->first();
+                            
+                            if ($magazzinoOriginale) {
+                                $magazzinoOriginaleId = $magazzinoOriginale->id;
+                            }
+                        }
+                    }
+                    
+                    // Se trovato, ripristina il magazzino originale
+                    if ($magazzinoOriginaleId) {
+                        $articolo->categoria_merceologica_id = $magazzinoOriginaleId;
+                    }
+                }
+                
+                $articolo->save();
+                $movimentiReso->push($movimento);
+                
+                // Invia notifica reso solo se deposito inter-società
+                if ($contoDeposito->isInterSocieta()) {
+                    try {
+                        $notificaService = new NotificaService();
+                        $notificaService->notificaReso($contoDeposito, $movimento);
+                    } catch (\Exception $e) {
+                        \Log::warning("Errore creazione notifica reso: " . $e->getMessage());
+                        // Non bloccare il processo per errori di notifica
+                    }
+                }
+            }
+
+            // Reso prodotti finiti selezionati
+            foreach ($prodottiFiniti as $pfData) {
+                $prodottoFinito = ProdottoFinito::findOrFail($pfData['prodotto_finito_id']);
+                
+                // Verifica che il PF sia in deposito
+                if (!$prodottoFinito->in_conto_deposito || $prodottoFinito->conto_deposito_corrente_id !== $contoDeposito->id) {
+                    throw new \Exception("Il prodotto finito {$prodottoFinito->codice} non è in questo deposito");
+                }
+
+                // Calcola costo (dal movimento di invio o costo totale PF)
+                $movimentoInvio = $contoDeposito->movimenti()
+                    ->where('prodotto_finito_id', $prodottoFinito->id)
+                    ->where('tipo_movimento', 'invio')
+                    ->first();
+                
+                $costoUnitario = $movimentoInvio ? $movimentoInvio->costo_unitario : ($prodottoFinito->costo_totale ?? 0);
+
+                // Crea movimento reso
+                $movimento = MovimentoDeposito::create([
+                    'conto_deposito_id' => $contoDeposito->id,
+                    'prodotto_finito_id' => $prodottoFinito->id,
+                    'tipo_movimento' => 'reso',
+                    'quantita' => 1,
+                    'costo_unitario' => $costoUnitario,
+                    'costo_totale' => $costoUnitario,
+                    'data_movimento' => now()->toDateString(),
+                    'note' => "Reso manuale prodotto finito {$prodottoFinito->codice}",
+                    'eseguito_da' => auth()->id(),
+                ]);
+
+                // Rimuovi PF dal deposito
+                $prodottoFinito->update([
+                    'in_conto_deposito' => false,
+                    'conto_deposito_corrente_id' => null
+                ]);
+                
+                $movimentiReso->push($movimento);
+                
+                // Invia notifica reso solo se deposito inter-società
+                if ($contoDeposito->isInterSocieta()) {
+                    try {
+                        $notificaService = new NotificaService();
+                        $notificaService->notificaReso($contoDeposito, $movimento);
+                    } catch (\Exception $e) {
+                        \Log::warning("Errore creazione notifica reso PF: " . $e->getMessage());
+                    }
+                }
+            }
+
+            // Aggiorna statistiche deposito
+            $contoDeposito->aggiornaStatistiche();
+            
+            // Verifica se il deposito è completamente vuoto
+            if ($contoDeposito->getArticoliRimanenti() == 0) {
+                $contoDeposito->update(['stato' => 'chiuso']);
+            } elseif ($contoDeposito->articoli_venduti > 0 || $contoDeposito->articoli_rientrati > 0) {
+                // Se ci sono vendite o resi, lo stato diventa parziale
+                $contoDeposito->update(['stato' => 'parziale']);
+            }
 
             return $movimentiReso;
         });
@@ -515,40 +736,68 @@ class ContoDepositoService
             $articoliTotali = 0;
             $valoreTotale = 0;
 
-            // Aggiungi dettagli per articoli rimanenti
-            $articoliRimanenti = $this->getArticoliRimanentiInDeposito($contoDeposito);
-            foreach ($articoliRimanenti as $articoloData) {
-                $valoreTotaleRiga = $articoloData['quantita'] * $articoloData['costo_unitario'];
-                
-                DdtDepositoDettaglio::create([
-                    'ddt_deposito_id' => $ddtDeposito->id,
-                    'articolo_id' => $articoloData['articolo']->id,
-                    'codice_item' => $articoloData['articolo']->codice,
-                    'descrizione' => $articoloData['articolo']->descrizione,
-                    'quantita' => $articoloData['quantita'],
-                    'valore_unitario' => $articoloData['costo_unitario'],
-                    'valore_totale' => $valoreTotaleRiga,
-                ]);
-                
-                $articoliTotali += $articoloData['quantita'];
-                $valoreTotale += $valoreTotaleRiga;
-            }
+            // Ottieni TUTTI i movimenti reso (sia manuali che automatici)
+            $movimentiReso = $contoDeposito->movimenti()
+                ->where('tipo_movimento', 'reso')
+                ->with(['articolo', 'prodottoFinito'])
+                ->get();
 
-            // Aggiungi dettagli per PF rimanenti
-            $pfRimanenti = $this->getProdottiFinitiRimanentiInDeposito($contoDeposito);
-            foreach ($pfRimanenti as $pfData) {
-                DdtDepositoDettaglio::create([
-                    'ddt_deposito_id' => $ddtDeposito->id,
-                    'prodotto_finito_id' => $pfData['prodotto_finito']->id,
-                    'codice_item' => $pfData['prodotto_finito']->codice,
-                    'descrizione' => $pfData['prodotto_finito']->descrizione,
-                    'quantita' => 1,
-                    'valore_unitario' => $pfData['costo_unitario'],
-                    'valore_totale' => $pfData['costo_unitario'],
-                ]);
-                
-                $articoliTotali += 1;
-                $valoreTotale += $pfData['costo_unitario'];
+            if ($movimentiReso->isNotEmpty()) {
+                // Usa i movimenti reso esistenti (manuali o automatici già creati)
+                foreach ($movimentiReso as $movimento) {
+                    $item = $movimento->getItem();
+                    
+                    DdtDepositoDettaglio::create([
+                        'ddt_deposito_id' => $ddtDeposito->id,
+                        'articolo_id' => $movimento->articolo_id,
+                        'prodotto_finito_id' => $movimento->prodotto_finito_id,
+                        'codice_item' => $item->codice,
+                        'descrizione' => $item->descrizione,
+                        'quantita' => $movimento->quantita,
+                        'valore_unitario' => $movimento->costo_unitario,
+                        'valore_totale' => $movimento->costo_totale,
+                    ]);
+                    
+                    $articoliTotali += $movimento->quantita;
+                    $valoreTotale += $movimento->costo_totale;
+                }
+            } else {
+                // Se non ci sono movimenti reso, usa gli articoli rimanenti (per reso automatico completo)
+                // Aggiungi dettagli per articoli rimanenti
+                $articoliRimanenti = $this->getArticoliRimanentiInDeposito($contoDeposito);
+                foreach ($articoliRimanenti as $articoloData) {
+                    $valoreTotaleRiga = $articoloData['quantita'] * $articoloData['costo_unitario'];
+                    
+                    DdtDepositoDettaglio::create([
+                        'ddt_deposito_id' => $ddtDeposito->id,
+                        'articolo_id' => $articoloData['articolo']->id,
+                        'codice_item' => $articoloData['articolo']->codice,
+                        'descrizione' => $articoloData['articolo']->descrizione,
+                        'quantita' => $articoloData['quantita'],
+                        'valore_unitario' => $articoloData['costo_unitario'],
+                        'valore_totale' => $valoreTotaleRiga,
+                    ]);
+                    
+                    $articoliTotali += $articoloData['quantita'];
+                    $valoreTotale += $valoreTotaleRiga;
+                }
+
+                // Aggiungi dettagli per PF rimanenti
+                $pfRimanenti = $this->getProdottiFinitiRimanentiInDeposito($contoDeposito);
+                foreach ($pfRimanenti as $pfData) {
+                    DdtDepositoDettaglio::create([
+                        'ddt_deposito_id' => $ddtDeposito->id,
+                        'prodotto_finito_id' => $pfData['prodotto_finito']->id,
+                        'codice_item' => $pfData['prodotto_finito']->codice,
+                        'descrizione' => $pfData['prodotto_finito']->descrizione,
+                        'quantita' => 1,
+                        'valore_unitario' => $pfData['costo_unitario'],
+                        'valore_totale' => $pfData['costo_unitario'],
+                    ]);
+                    
+                    $articoliTotali += 1;
+                    $valoreTotale += $pfData['costo_unitario'];
+                }
             }
 
             // Aggiorna totali nel DDT
@@ -559,7 +808,12 @@ class ContoDepositoService
 
             // Aggiorna deposito con DDT reso
             $contoDeposito->update(['ddt_reso_id' => $ddtDeposito->id]);
-
+            
+            // Aggiorna tutti i movimenti reso con il riferimento al DDT
+            // Nota: ddt_id punta a Ddt, ma DdtDeposito è separato
+            // Per ora non aggiorniamo ddt_id, ma useremo un approccio alternativo
+            // I movimenti saranno collegati al DDT attraverso ddtDeposito->movimenti()
+            
             return $ddtDeposito;
         });
     }

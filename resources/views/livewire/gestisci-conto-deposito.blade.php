@@ -36,7 +36,7 @@
                         @endif
                     @endif
                     
-                    @if($deposito->stato === 'attivo' && $deposito->isScaduto())
+                    @if((($deposito->stato === 'attivo' && $deposito->isScaduto()) || ($deposito->articoli_rientrati > 0 && !$deposito->ddt_reso_id)))
                         <button class="btn btn-warning" wire:click="generaDdtReso">
                             <iconify-icon icon="solar:import-bold" class="me-1"></iconify-icon>
                             Genera DDT Reso
@@ -196,13 +196,22 @@
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="card-title mb-0">Articoli in Deposito</h5>
                     @if($deposito->stato === 'attivo' && ($articoliInDeposito->count() > 0 || $prodottiFinitiInDeposito->count() > 0))
-                        <button class="btn btn-success btn-sm" wire:click="apriVenditaMultiplaModal">
-                            <iconify-icon icon="solar:cart-check-bold" class="me-1"></iconify-icon>
-                            Vendita Multipla
-                            @if($this->getTotaleSelezionatiVendita() > 0)
-                                <span class="badge bg-light text-success ms-1">{{ $this->getTotaleSelezionatiVendita() }}</span>
-                            @endif
-                        </button>
+                        <div class="btn-group">
+                            <button class="btn btn-warning btn-sm" wire:click="apriResoManualeModal">
+                                <iconify-icon icon="solar:import-bold" class="me-1"></iconify-icon>
+                                Reso Manuale
+                                @if($this->getTotaleSelezionatiReso() > 0)
+                                    <span class="badge bg-light text-warning ms-1">{{ $this->getTotaleSelezionatiReso() }}</span>
+                                @endif
+                            </button>
+                            <button class="btn btn-success btn-sm" wire:click="apriVenditaMultiplaModal">
+                                <iconify-icon icon="solar:cart-check-bold" class="me-1"></iconify-icon>
+                                Vendita Multipla
+                                @if($this->getTotaleSelezionatiVendita() > 0)
+                                    <span class="badge bg-light text-success ms-1">{{ $this->getTotaleSelezionatiVendita() }}</span>
+                                @endif
+                            </button>
+                        </div>
                     @endif
                 </div>
                 <div class="card-body">
@@ -212,8 +221,11 @@
                                 <thead class="table-light">
                                     <tr>
                                         @if($deposito->stato === 'attivo')
-                                            <th width="30">
-                                                <iconify-icon icon="solar:check-circle-bold" class="text-muted" title="Seleziona per vendita multipla"></iconify-icon>
+                                            <th width="30" title="Seleziona per reso">
+                                                <iconify-icon icon="solar:import-bold" class="text-warning small"></iconify-icon>
+                                            </th>
+                                            <th width="30" title="Seleziona per vendita">
+                                                <iconify-icon icon="solar:cart-check-bold" class="text-success small"></iconify-icon>
                                             </th>
                                         @endif
                                         <th>Tipo</th>
@@ -230,6 +242,12 @@
                                     @foreach($articoliInDeposito as $articoloData)
                                         <tr>
                                             @if($deposito->stato === 'attivo')
+                                                <td class="text-center">
+                                                    <input type="checkbox" 
+                                                           class="form-check-input" 
+                                                           wire:change="toggleArticoloReso({{ $articoloData['articolo']->id }})"
+                                                           @if($this->isArticoloSelezionatoReso($articoloData['articolo']->id)) checked @endif>
+                                                </td>
                                                 <td class="text-center">
                                                     <input type="checkbox" 
                                                            class="form-check-input" 
@@ -266,10 +284,14 @@
                                                 <td class="text-center">
                                                     <input type="checkbox" 
                                                            class="form-check-input" 
+                                                           wire:change="toggleProdottoFinitoReso({{ $pfData['prodotto_finito']->id }})"
+                                                           @if($this->isProdottoFinitoSelezionatoReso($pfData['prodotto_finito']->id)) checked @endif>
+                                                </td>
+                                                <td class="text-center">
+                                                    <input type="checkbox" 
+                                                           class="form-check-input" 
                                                            wire:click="toggleProdottoFinitoVendita({{ $pfData['prodotto_finito']->id }})"
-                                                           @if($this->isProdottoFinitoSelezionatoVendita($pfData['prodotto_finito']->id)) checked @endif
-                                                           onchange="console.log('Checkbox clicked for PF ID: {{ $pfData['prodotto_finito']->id }}')"
-                                                           onclick="console.log('Checkbox onclick for PF ID: {{ $pfData['prodotto_finito']->id }}')">
+                                                           @if($this->isProdottoFinitoSelezionatoVendita($pfData['prodotto_finito']->id)) checked @endif>
                                                 </td>
                                             @endif
                                             <td>
@@ -796,6 +818,106 @@
                                 @if(empty($articoliSelezionatiVendita) && empty($prodottiFinitiSelezionatiVendita)) disabled @endif>
                             <iconify-icon icon="solar:cart-check-bold" class="me-1"></iconify-icon>
                             Registra Vendita Multipla
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-backdrop fade show"></div>
+    @endif
+
+    {{-- Modal Reso Manuale --}}
+    @if($showResoManualeModal)
+        <div class="modal fade show" style="display: block;" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            <iconify-icon icon="solar:import-bold-duotone" class="me-2"></iconify-icon>
+                            Reso Manuale Articoli
+                        </h5>
+                        <button type="button" wire:click="chiudiResoManualeModal" class="btn-close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-info">
+                            <iconify-icon icon="solar:info-circle-bold" class="me-2"></iconify-icon>
+                            <strong>Informazioni:</strong> Seleziona gli articoli da restituire alla sede mittente. Dopo il reso potrai generare il DDT di reso.
+                        </div>
+
+                        <h6 class="fw-bold text-warning mb-3">
+                            <iconify-icon icon="solar:bag-check-bold" class="me-1"></iconify-icon>
+                            Articoli Selezionati per Reso ({{ $this->getTotaleSelezionatiReso() }})
+                        </h6>
+                        
+                        @if(empty($articoliSelezionatiReso) && empty($prodottiFinitiSelezionatiReso))
+                            <div class="alert alert-warning text-center">
+                                <iconify-icon icon="solar:info-circle-bold" class="me-2"></iconify-icon>
+                                Nessun articolo selezionato.<br>
+                                <small>Usa le checkbox <iconify-icon icon="solar:import-bold" class="text-warning"></iconify-icon> nella tabella per selezionare articoli da restituire.</small>
+                            </div>
+                        @else
+                            <div class="mb-3" style="max-height: 300px; overflow-y: auto;">
+                                {{-- Articoli selezionati --}}
+                                @foreach($articoliSelezionatiReso as $articoloId => $articoloData)
+                                    @php
+                                        $articolo = \App\Models\Articolo::find($articoloId);
+                                    @endphp
+                                    <div class="card mb-2">
+                                        <div class="card-body p-2">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <div>
+                                                    <span class="badge bg-light-primary text-primary me-1">ART</span>
+                                                    <strong>{{ $articolo->codice ?? 'N/A' }}</strong>
+                                                    <br><small class="text-muted">{{ Str::limit($articolo->descrizione ?? '', 30) }}</small>
+                                                </div>
+                                                <div class="text-end">
+                                                    <input type="number" 
+                                                           class="form-control form-control-sm" 
+                                                           style="width: 70px; display: inline-block;"
+                                                           wire:model="articoliSelezionatiReso.{{ $articoloId }}.quantita"
+                                                           min="1" 
+                                                           max="{{ $articoloData['max_quantita'] }}">
+                                                    <br><small class="text-muted">Max: {{ $articoloData['max_quantita'] }}</small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                @endforeach
+                                
+                                {{-- Prodotti finiti selezionati --}}
+                                @foreach($prodottiFinitiSelezionatiReso as $pfId => $pfData)
+                                    @php
+                                        $pf = \App\Models\ProdottoFinito::find($pfId);
+                                    @endphp
+                                    <div class="card mb-2">
+                                        <div class="card-body p-2">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <div>
+                                                    <span class="badge bg-light-warning text-warning me-1">PF</span>
+                                                    <strong>{{ $pf->codice ?? 'N/A' }}</strong>
+                                                    <br><small class="text-muted">{{ Str::limit($pf->descrizione ?? '', 30) }}</small>
+                                                </div>
+                                                <div class="text-end">
+                                                    <span class="badge bg-light-warning text-warning">Q.tà: 1</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                @endforeach
+                            </div>
+                        @endif
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" wire:click="chiudiResoManualeModal">
+                            <iconify-icon icon="solar:close-circle-bold" class="me-1"></iconify-icon>
+                            Annulla
+                        </button>
+                        <button type="button" 
+                                class="btn btn-warning" 
+                                wire:click="eseguiResoManuale"
+                                @if(empty($articoliSelezionatiReso) && empty($prodottiFinitiSelezionatiReso)) disabled @endif>
+                            <iconify-icon icon="solar:import-bold" class="me-1"></iconify-icon>
+                            Conferma Reso
                         </button>
                     </div>
                 </div>

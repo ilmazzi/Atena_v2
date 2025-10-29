@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Societa;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -239,6 +240,37 @@ class ContoDeposito extends Model
     // ==========================================
     // BUSINESS LOGIC
     // ==========================================
+    
+    /**
+     * Ottieni società mittente (tramite sede)
+     */
+    public function getSocietaMittente(): ?Societa
+    {
+        return $this->sedeMittente->societa ?? null;
+    }
+    
+    /**
+     * Ottieni società destinataria (tramite sede)
+     */
+    public function getSocietaDestinataria(): ?Societa
+    {
+        return $this->sedeDestinataria->societa ?? null;
+    }
+    
+    /**
+     * Verifica se il deposito è inter-società (tra 2 società diverse)
+     */
+    public function isInterSocieta(): bool
+    {
+        $socMittente = $this->getSocietaMittente();
+        $socDestinataria = $this->getSocietaDestinataria();
+        
+        if (!$socMittente || !$socDestinataria) {
+            return false;
+        }
+        
+        return $socMittente->id !== $socDestinataria->id;
+    }
     
     /**
      * Genera codice automatico per il deposito

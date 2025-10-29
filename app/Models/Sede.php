@@ -4,7 +4,9 @@ namespace App\Models;
 
 use App\Models\Articolo;
 use App\Models\CategoriaMerceologica;
+use App\Models\Societa;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -32,6 +34,7 @@ class Sede extends Model
         'telefono',
         'email',
         'tipo',
+        'societa_id',
         'attivo',
         'note',
         'orari',
@@ -48,6 +51,14 @@ class Sede extends Model
     // ==========================================
     // RELATIONSHIPS
     // ==========================================
+    
+    /**
+     * Società di appartenenza
+     */
+    public function societa(): BelongsTo
+    {
+        return $this->belongsTo(Societa::class, 'societa_id');
+    }
     
     /**
      * Categorie merceologiche presenti in questa sede

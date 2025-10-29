@@ -70,9 +70,18 @@ Route::prefix('stampanti')->group(function () {
             Route::get('/', function () {
                 return view('conti-deposito.index');
             })->name('conti-deposito.index');
+            Route::get('/{id}', function ($id) {
+                return view('conti-deposito.gestisci', ['depositoId' => $id]);
+            })->name('conti-deposito.show');
             Route::get('/{id}/gestisci', function ($id) {
                 return view('conti-deposito.gestisci', ['depositoId' => $id]);
             })->name('conti-deposito.gestisci');
+            Route::get('/resi/gestione', \App\Http\Livewire\GestioneResiDeposito::class)->name('conti-deposito.resi');
+        });
+        
+        // Notifiche routes
+        Route::prefix('notifiche')->group(function () {
+            Route::get('/', \App\Http\Livewire\DashboardNotifiche::class)->name('notifiche.index');
         });
 
         // DDT Acquisti routes
@@ -156,6 +165,13 @@ Route::prefix('inventario')->group(function () {
         Route::get('/{document}/pdf', [OcrController::class, 'showPdf'])->name('ocr.documents.pdf');
         Route::get('/{document}/download', [OcrController::class, 'downloadPdf'])->name('ocr.download');
         Route::delete('/{document}', [OcrController::class, 'destroy'])->name('ocr.destroy');
+    });
+    
+    // Gestione entità base (Società, Sedi, Magazzini)
+    Route::prefix('gestione')->group(function () {
+        Route::get('/societa', \App\Http\Livewire\GestioneSocieta::class)->name('gestione.societa');
+        Route::get('/sedi', \App\Http\Livewire\GestioneSedi::class)->name('gestione.sedi');
+        Route::get('/magazzini', \App\Http\Livewire\GestioneMagazzini::class)->name('gestione.magazzini');
     });
 });
 

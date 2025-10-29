@@ -62,12 +62,29 @@
         </li>
 
         <li class="nav-item">
-            <a class="nav-link" href="{{ route('conti-deposito.index') }}">
+            <a class="nav-link menu-arrow" href="#sidebarContiDeposito" data-bs-toggle="collapse" role="button"
+               aria-expanded="false" aria-controls="sidebarContiDeposito">
                      <span class="nav-icon">
                     <iconify-icon icon="solar:box-bold-duotone"></iconify-icon>
                      </span>
                 <span class="nav-text">Conti Deposito</span>
             </a>
+            <div class="collapse" id="sidebarContiDeposito">
+                <ul class="nav sub-navbar-nav">
+                    <li class="sub-nav-item">
+                        <a class="sub-nav-link" href="{{ route('conti-deposito.index') }}">
+                            <iconify-icon icon="solar:list-bold" class="me-1"></iconify-icon>
+                            Lista Depositi
+                        </a>
+                    </li>
+                    <li class="sub-nav-item">
+                        <a class="sub-nav-link" href="{{ route('conti-deposito.resi') }}">
+                            <iconify-icon icon="solar:import-bold" class="me-1"></iconify-icon>
+                            Gestione Resi
+                        </a>
+                    </li>
+                </ul>
+            </div>
         </li>
 
         <li class="nav-item">
@@ -236,13 +253,41 @@
                 </a>
             </li>
 
+            {{-- ============================================ --}}
+            {{-- GESTIONE --}}
+            {{-- ============================================ --}}
+            <li class="menu-title mt-2">Gestione</li>
+
             <li class="nav-item">
-                <a class="nav-link" href="#">
+                <a class="nav-link menu-arrow" href="#sidebarGestione" data-bs-toggle="collapse" role="button"
+                   aria-expanded="false" aria-controls="sidebarGestione">
                          <span class="nav-icon">
-                        <iconify-icon icon="solar:map-point-bold-duotone"></iconify-icon>
+                        <iconify-icon icon="solar:settings-bold-duotone"></iconify-icon>
                          </span>
-                    <span class="nav-text">Sedi</span>
+                    <span class="nav-text">Configurazione</span>
                 </a>
+                <div class="collapse" id="sidebarGestione">
+                    <ul class="nav sub-navbar-nav">
+                        <li class="sub-nav-item">
+                            <a class="sub-nav-link" href="{{ route('gestione.societa') }}">
+                                <iconify-icon icon="solar:buildings-2-bold" class="me-1"></iconify-icon>
+                                Società
+                            </a>
+                        </li>
+                        <li class="sub-nav-item">
+                            <a class="sub-nav-link" href="{{ route('gestione.sedi') }}">
+                                <iconify-icon icon="solar:map-point-bold" class="me-1"></iconify-icon>
+                                Sedi
+                            </a>
+                        </li>
+                        <li class="sub-nav-item">
+                            <a class="sub-nav-link" href="{{ route('gestione.magazzini') }}">
+                                <iconify-icon icon="solar:box-bold" class="me-1"></iconify-icon>
+                                Magazzini
+                            </a>
+                        </li>
+                    </ul>
+                </div>
             </li>
 
             {{-- ============================================ --}}
@@ -291,6 +336,20 @@
                <span class="nav-text">Storico Articoli</span>
            </a>
        </li>
+
+            {{-- ============================================ --}}
+            {{-- NOTIFICHE --}}
+            {{-- ============================================ --}}
+            <li class="menu-title mt-2">Notifiche</li>
+
+            <li class="nav-item">
+                <a class="nav-link" href="{{ route('notifiche.index') }}">
+                         <span class="nav-icon">
+                        <iconify-icon icon="solar:bell-bold-duotone"></iconify-icon>
+                         </span>
+                    <span class="nav-text">Dashboard Notifiche</span>
+                </a>
+            </li>
 
             {{-- ============================================ --}}
             {{-- SISTEMA --}}
