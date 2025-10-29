@@ -266,7 +266,7 @@
             </div>
             <div class="info-row">
                 <span class="info-label">Data:</span>
-                {{ $ddtDeposito->data_documento->format('d/m/Y') }}
+                {{ $ddtDeposito->data_documento ? $ddtDeposito->data_documento->format('d/m/Y') : 'N/A' }}
             </div>
             <div class="info-row">
                 <span class="info-label">Tipo:</span>

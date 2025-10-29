@@ -429,21 +429,39 @@ class ContoDepositoService
     public function generaDdtInvio(ContoDeposito $contoDeposito): DdtDeposito
     {
         return DB::transaction(function () use ($contoDeposito) {
+            // Debug: verifica data_invio
+            \Log::info('🔍 DEBUG generaDdtInvio', [
+                'conto_deposito_id' => $contoDeposito->id,
+                'data_invio' => $contoDeposito->data_invio,
+                'data_invio_type' => gettype($contoDeposito->data_invio),
+                'data_invio_year' => $contoDeposito->data_invio ? $contoDeposito->data_invio->year : 'NULL'
+            ]);
+
+            // Usa data_invio se disponibile, altrimenti oggi
+            $dataDocumento = $contoDeposito->data_invio ?? now()->toDateString();
+            $anno = $contoDeposito->data_invio ? $contoDeposito->data_invio->year : now()->year;
+
             // Crea DDT Deposito
             $ddtDeposito = DdtDeposito::create([
                 'numero' => DdtDeposito::generaNumeroDdt(),
-                'data_documento' => $contoDeposito->data_invio,
-                'anno' => $contoDeposito->data_invio->year,
+                'data_documento' => $dataDocumento,
+                'anno' => $anno,
                 'conto_deposito_id' => $contoDeposito->id,
                 'tipo' => 'invio',
                 'sede_mittente_id' => $contoDeposito->sede_mittente_id,
                 'sede_destinataria_id' => $contoDeposito->sede_destinataria_id,
                 'stato' => 'creato',
                 'causale' => 'Conto deposito',
-                'valore_dichiarato' => $contoDeposito->valore_totale_invio,
-                'articoli_totali' => $contoDeposito->articoli_inviati,
+                'valore_dichiarato' => $contoDeposito->valore_totale_invio ?? 0,
+                'articoli_totali' => $contoDeposito->articoli_inviati ?? 0,
                 'note' => "DDT invio conto deposito {$contoDeposito->codice}",
                 'creato_da' => auth()->id(),
+            ]);
+
+            \Log::info('✅ DDT Deposito creato', [
+                'ddt_id' => $ddtDeposito->id,
+                'numero' => $ddtDeposito->numero,
+                'data_documento' => $ddtDeposito->data_documento
             ]);
 
             // Aggiungi dettagli per ogni movimento di invio
