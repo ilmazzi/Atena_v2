@@ -76,27 +76,51 @@ class ContoDeposito extends Model
     }
     
     /**
-     * DDT di invio articoli
+     * DDT Deposito associati a questo conto deposito
+     */
+    public function ddtDepositi(): HasMany
+    {
+        return $this->hasMany(DdtDeposito::class, 'conto_deposito_id');
+    }
+    
+    /**
+     * DDT di invio (primo DDT di tipo invio)
      */
     public function ddtInvio(): BelongsTo
     {
-        return $this->belongsTo(Ddt::class, 'ddt_invio_id');
+        return $this->belongsTo(DdtDeposito::class, 'ddt_invio_id');
     }
     
     /**
-     * DDT di reso articoli
+     * DDT di reso (primo DDT di tipo reso)
      */
     public function ddtReso(): BelongsTo
     {
-        return $this->belongsTo(Ddt::class, 'ddt_reso_id');
+        return $this->belongsTo(DdtDeposito::class, 'ddt_reso_id');
     }
     
     /**
-     * DDT per rimandare dopo reso
+     * DDT per rimando dopo reso
      */
     public function ddtRimando(): BelongsTo
     {
-        return $this->belongsTo(Ddt::class, 'ddt_rimando_id');
+        return $this->belongsTo(DdtDeposito::class, 'ddt_rimando_id');
+    }
+    
+    /**
+     * Tutti i DDT di invio
+     */
+    public function ddtInvii(): HasMany
+    {
+        return $this->ddtDepositi()->where('tipo', 'invio');
+    }
+    
+    /**
+     * Tutti i DDT di reso
+     */
+    public function ddtResi(): HasMany
+    {
+        return $this->ddtDepositi()->where('tipo', 'reso');
     }
     
     /**

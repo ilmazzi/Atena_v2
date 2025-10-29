@@ -75,9 +75,26 @@ Route::prefix('stampanti')->group(function () {
             })->name('conti-deposito.gestisci');
         });
 
-        // DDT routes
+        // DDT Acquisti routes
         Route::prefix('ddt')->group(function () {
             Route::get('/{id}/stampa', [\App\Http\Controllers\DdtController::class, 'stampa'])->name('ddt.stampa');
+        });
+
+        // DDT Deposito routes (separati dai DDT acquisti)
+        Route::prefix('ddt-deposito')->name('ddt-deposito.')->group(function () {
+            Route::get('/', [\App\Http\Controllers\DdtDepositoController::class, 'index'])->name('index');
+            Route::get('/{ddtDeposito}', [\App\Http\Controllers\DdtDepositoController::class, 'show'])->name('show');
+            Route::get('/{ddtDeposito}/stampa', [\App\Http\Controllers\DdtDepositoController::class, 'stampa'])->name('stampa');
+            Route::get('/{ddtDeposito}/pdf', [\App\Http\Controllers\DdtDepositoController::class, 'scaricaPdf'])->name('pdf');
+            Route::post('/{ddtDeposito}/conferma-ricezione', [\App\Http\Controllers\DdtDepositoController::class, 'confermaRicezione'])->name('conferma-ricezione');
+            Route::post('/{ddtDeposito}/marca-spedito', [\App\Http\Controllers\DdtDepositoController::class, 'marcaSpedito'])->name('marca-spedito');
+        });
+
+        // Movimentazioni Interne routes
+        Route::prefix('movimentazioni-interne')->name('movimentazioni-interne.')->group(function () {
+            Route::get('/', [\App\Http\Controllers\MovimentazioneInternaController::class, 'index'])->name('index');
+            Route::get('/{movimentazione}/stampa', [\App\Http\Controllers\MovimentazioneInternaController::class, 'stampaDdt'])->name('stampa');
+            Route::get('/{movimentazione}/download', [\App\Http\Controllers\MovimentazioneInternaController::class, 'downloadDdt'])->name('download');
         });
 
 // Routes Inventario

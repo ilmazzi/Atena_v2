@@ -266,6 +266,23 @@ class Articolo extends Model
         
         return max(0, $qtaResidua - $qtaInDeposito - $qtaInVetrina);
     }
+    
+    /**
+     * Calcola quantità disponibile per movimentazioni interne
+     * 
+     * Per le movimentazioni interne:
+     * - Articoli in vetrina POSSONO essere movimentati (con warning)
+     * - Articoli in deposito NON possono essere movimentati
+     */
+    public function getQuantitaDisponibilePerMovimentazione(): int
+    {
+        $qtaResidua = $this->giacenza->quantita_residua ?? 0;
+        $qtaInDeposito = $this->quantita_in_deposito ?? 0;
+        
+        // Per movimentazioni interne, gli articoli in vetrina sono movimentabili
+        // (a differenza delle vendite dove potrebbero essere bloccati)
+        return max(0, $qtaResidua - $qtaInDeposito);
+    }
 
     /**
      * Aggiorna la quantità in deposito

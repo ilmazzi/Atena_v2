@@ -8,6 +8,7 @@ use App\Models\ContoDeposito;
 use App\Models\Articolo;
 use App\Models\ProdottoFinito;
 use App\Services\ContoDepositoService;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Collection;
 
 /**
@@ -39,10 +40,39 @@ class GestisciContoDeposito extends Component
     // Form vendita
     public $itemVendita = null;
     public $quantitaVendita = 1;
+    
+    // Form vendita multipla
+    public $showVenditaMultiplaModal = false;
+    public $articoliSelezionatiVendita = [];
+    public $prodottiFinitiSelezionatiVendita = [];
+    
+    // Dati fattura vendita
+    public $numeroFattura = '';
+    public $dataFattura = '';
+    public $clienteNome = '';
+    public $clienteCognome = '';
+    public $clienteTelefono = '';
+    public $clienteEmail = '';
+    public $importoTotaleFattura = 0;
+    public $noteFattura = '';
 
     protected $rules = [
         'articoliSelezionati.*.quantita' => 'required|integer|min:1',
         'quantitaVendita' => 'required|integer|min:1',
+        
+        // Regole vendita multipla - OPZIONALI
+        'numeroFattura' => 'nullable|string|max:50',
+        'dataFattura' => 'nullable|date',
+        'clienteNome' => 'nullable|string|max:100',
+        'clienteCognome' => 'nullable|string|max:100',
+        'clienteTelefono' => 'nullable|string|max:20',
+        'clienteEmail' => 'nullable|email|max:100',
+        'importoTotaleFattura' => 'nullable|numeric|min:0.01',
+        'noteFattura' => 'nullable|string|max:500',
+        
+        // Selezioni - OPZIONALI
+        'articoliSelezionatiVendita' => 'nullable|array',
+        'prodottiFinitiSelezionatiVendita' => 'nullable|array',
     ];
 
     public function mount($depositoId)
@@ -55,6 +85,9 @@ class GestisciContoDeposito extends Component
             'movimenti.prodottoFinito',
             'creatoDa'
         ])->findOrFail($depositoId);
+        
+        // Inizializza data fattura ad oggi
+        $this->dataFattura = now()->format('Y-m-d');
     }
 
     // ==========================================
@@ -167,7 +200,10 @@ class GestisciContoDeposito extends Component
 
     public function aggiungiArticoliAlDeposito()
     {
-        $this->validate();
+        // Validazione specifica per aggiunta articoli (solo quantità degli articoli selezionati)
+        $this->validate([
+            'articoliSelezionati.*.quantita' => 'required|integer|min:1',
+        ]);
 
         try {
             $service = new ContoDepositoService();
@@ -209,6 +245,246 @@ class GestisciContoDeposito extends Component
     // ==========================================
     // ACTIONS - VENDITE
     // ==========================================
+    
+    /**
+     * Apre il modal per vendita multipla con fattura
+     */
+    public function apriVenditaMultiplaModal()
+    {
+        // NON resettare le selezioni! Solo i campi fattura
+        $this->reset([
+            'numeroFattura',
+            'clienteNome',
+            'clienteCognome', 
+            'clienteTelefono',
+            'clienteEmail',
+            'importoTotaleFattura',
+            'noteFattura'
+        ]);
+        
+        $this->dataFattura = now()->format('Y-m-d');
+        $this->showVenditaMultiplaModal = true;
+    }
+    
+    /**
+     * Chiude il modal vendita multipla
+     */
+    public function chiudiVenditaMultiplaModal()
+    {
+        $this->showVenditaMultiplaModal = false;
+        $this->resetValidation();
+    }
+    
+    /**
+     * Toggle selezione articolo per vendita
+     */
+    public function toggleArticoloVendita($articoloId)
+    {
+        if (isset($this->articoliSelezionatiVendita[$articoloId])) {
+            unset($this->articoliSelezionatiVendita[$articoloId]);
+        } else {
+            $articoloData = $this->articoliInDeposito->firstWhere('articolo.id', $articoloId);
+            if ($articoloData) {
+                // SOLO dati essenziali, NO oggetti Eloquent
+                $this->articoliSelezionatiVendita[$articoloId] = [
+                    'articolo_id' => $articoloId,
+                    'quantita' => min(1, $articoloData['quantita']),
+                    'max_quantita' => $articoloData['quantita'],
+                    'costo_unitario' => $articoloData['costo_unitario'],
+                    // Dati per display (solo stringhe/numeri)
+                    'codice' => $articoloData['articolo']['codice'] ?? '',
+                    'descrizione' => $articoloData['articolo']['descrizione'] ?? '',
+                ];
+            }
+        }
+        
+        $this->calcolaImportoTotale();
+    }
+    
+    /**
+     * Toggle selezione prodotto finito per vendita
+     */
+    public function toggleProdottoFinitoVendita($pfId)
+    {
+        // Debug log per verificare che il metodo viene chiamato
+        \Log::info("toggleProdottoFinitoVendita chiamato con ID: {$pfId}");
+        
+        if (isset($this->prodottiFinitiSelezionatiVendita[$pfId])) {
+            unset($this->prodottiFinitiSelezionatiVendita[$pfId]);
+            \Log::info("PF {$pfId} rimosso dalla selezione");
+        } else {
+            $pfData = $this->prodottiFinitiInDeposito->firstWhere('prodotto_finito.id', $pfId);
+            if ($pfData) {
+                // SOLO dati essenziali, NO oggetti Eloquent
+                $this->prodottiFinitiSelezionatiVendita[$pfId] = [
+                    'prodotto_finito_id' => $pfId,
+                    'quantita' => 1,
+                    'costo_unitario' => $pfData['costo_unitario'],
+                    // Dati per display (solo stringhe/numeri)
+                    'codice' => $pfData['prodotto_finito']['codice'] ?? '',
+                    'descrizione' => $pfData['prodotto_finito']['descrizione'] ?? '',
+                ];
+                \Log::info("PF {$pfId} aggiunto alla selezione");
+            } else {
+                \Log::error("PF {$pfId} non trovato nella collection prodottiFinitiInDeposito");
+            }
+        }
+        
+        $this->calcolaImportoTotale();
+        
+        // Debug della selezione attuale
+        \Log::info("Selezione attuale: " . count($this->prodottiFinitiSelezionatiVendita) . " PF selezionati");
+    }
+    
+    /**
+     * Calcola automaticamente l'importo totale
+     */
+    public function calcolaImportoTotale()
+    {
+        $totale = 0;
+        
+        // Somma articoli selezionati
+        foreach ($this->articoliSelezionatiVendita as $articolo) {
+            $totale += $articolo['quantita'] * $articolo['costo_unitario'];
+        }
+        
+        // Somma prodotti finiti selezionati
+        foreach ($this->prodottiFinitiSelezionatiVendita as $pf) {
+            $totale += $pf['costo_unitario'];
+        }
+        
+        $this->importoTotaleFattura = $totale;
+    }
+    
+    /**
+     * Aggiorna quantità e ricalcola totale
+     */
+    public function updatedArticoliSelezionatiVendita()
+    {
+        $this->calcolaImportoTotale();
+    }
+    
+    /**
+     * Registra vendita multipla con fattura
+     */
+    public function registraVenditaMultipla()
+    {
+        \Log::info("🔥 registraVenditaMultipla CHIAMATO!");
+        \Log::info("📊 Selezioni: Articoli=" . count($this->articoliSelezionatiVendita) . ", PF=" . count($this->prodottiFinitiSelezionatiVendita));
+        \Log::info("📝 Campi fattura: numeroFattura='{$this->numeroFattura}', clienteNome='{$this->clienteNome}', clienteCognome='{$this->clienteCognome}'");
+        
+        // Validazione specifica per vendita multipla
+        \Log::info("🔍 Pre-validazione...");
+        try {
+            $this->validate([
+                'numeroFattura' => 'required|string|max:50',
+                'dataFattura' => 'required|date',
+                'clienteNome' => 'required|string|max:100',
+                'clienteCognome' => 'required|string|max:100',
+                'clienteTelefono' => 'nullable|string|max:20',
+                'clienteEmail' => 'nullable|email|max:100',
+                'importoTotaleFattura' => 'required|numeric|min:0',
+                'noteFattura' => 'nullable|string|max:500',
+            ]);
+            \Log::info("✅ Validazione OK!");
+        } catch (\Exception $e) {
+            \Log::error("❌ Validazione FALLITA: " . $e->getMessage());
+            throw $e;
+        }
+        
+        \Log::info("🔍 Controllo selezioni...");
+        if (empty($this->articoliSelezionatiVendita) && empty($this->prodottiFinitiSelezionatiVendita)) {
+            \Log::error("❌ Nessuna selezione trovata!");
+            session()->flash('error', 'Seleziona almeno un articolo o prodotto finito da vendere');
+            return;
+        }
+        \Log::info("✅ Selezioni trovate, procedo...");
+
+        \Log::info("🚀 Inizio transazione...");
+        try {
+            DB::transaction(function () {
+                \Log::info("📦 Dentro transazione DB...");
+                
+                // TODO: Creare record fattura se necessario
+                // $fattura = $this->creaFatturaVendita();
+                
+                \Log::info("🔧 Creazione ContoDepositoService...");
+                $service = new ContoDepositoService();
+                \Log::info("✅ ContoDepositoService creato!");
+                
+                \Log::info("🛒 Inizio registrazione vendite...");
+                
+                // Registra vendite articoli
+                \Log::info("🔍 Articoli selezionati: " . count($this->articoliSelezionatiVendita));
+                foreach ($this->articoliSelezionatiVendita as $articoloId => $articoloData) {
+                    \Log::info("📦 Registro vendita articolo ID: {$articoloId}...");
+                    $articolo = Articolo::findOrFail($articoloId);
+                    $service->registraVendita(
+                        $this->deposito,
+                        $articolo,
+                        $articoloData['quantita']
+                    );
+                }
+                
+                // Registra vendite prodotti finiti
+                \Log::info("🔍 PF selezionati: " . count($this->prodottiFinitiSelezionatiVendita));
+                foreach ($this->prodottiFinitiSelezionatiVendita as $pfId => $pfData) {
+                    \Log::info("🏆 Registro vendita PF ID: {$pfId}...");
+                    $prodottoFinito = ProdottoFinito::findOrFail($pfId);
+                    $service->registraVendita(
+                        $this->deposito,
+                        $prodottoFinito,
+                        1
+                    );
+                }
+                
+                // Aggiorna deposito
+                $this->deposito->refresh();
+            });
+            
+            $totaleItemsVenduti = count($this->articoliSelezionatiVendita) + count($this->prodottiFinitiSelezionatiVendita);
+            
+            \Log::info("🎉 VENDITA COMPLETATA! Items venduti: {$totaleItemsVenduti}");
+            
+            // Reset selezioni dopo vendita
+            $this->articoliSelezionatiVendita = [];
+            $this->prodottiFinitiSelezionatiVendita = [];
+            
+            session()->flash('success', "🎉 Vendita registrata con successo! {$totaleItemsVenduti} articoli venduti per €" . number_format($this->importoTotaleFattura, 2, ',', '.'));
+            
+            $this->chiudiVenditaMultiplaModal();
+            
+            // Forza refresh della pagina per mostrare i cambiamenti
+            $this->redirect(route('conti-deposito.gestisci', $this->depositoId));
+            
+        } catch (\Exception $e) {
+            session()->flash('error', 'Errore durante la registrazione: ' . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Verifica se un articolo è selezionato per vendita
+     */
+    public function isArticoloSelezionatoVendita($articoloId): bool
+    {
+        return isset($this->articoliSelezionatiVendita[$articoloId]);
+    }
+    
+    /**
+     * Verifica se un PF è selezionato per vendita
+     */
+    public function isProdottoFinitoSelezionatoVendita($pfId): bool
+    {
+        return isset($this->prodottiFinitiSelezionatiVendita[$pfId]);
+    }
+    
+    /**
+     * Ottiene il totale articoli selezionati per vendita
+     */
+    public function getTotaleSelezionatiVendita(): int
+    {
+        return count($this->articoliSelezionatiVendita) + count($this->prodottiFinitiSelezionatiVendita);
+    }
 
     public function apriRegistraVenditaModal($tipo, $itemId)
     {
@@ -243,7 +519,10 @@ class GestisciContoDeposito extends Component
 
     public function registraVendita()
     {
-        $this->validate();
+        // Validazione specifica per vendita singola
+        $this->validate([
+            'quantitaVendita' => 'required|integer|min:1',
+        ]);
 
         try {
             $service = new ContoDepositoService();
@@ -273,15 +552,15 @@ class GestisciContoDeposito extends Component
     {
         try {
             $service = new ContoDepositoService();
-            $ddt = $service->generaDdtInvio($this->deposito);
+            $ddtDeposito = $service->generaDdtInvio($this->deposito);
             
             // Aggiorna deposito
             $this->deposito->refresh();
 
-            session()->flash('success', "DDT di invio {$ddt->numero} generato con successo");
+            session()->flash('success', "DDT di invio {$ddtDeposito->numero} generato con successo");
             
-            // Redirect alla stampa DDT
-            return redirect()->route('ddt.stampa', $ddt->id);
+            // Redirect alla stampa DDT Deposito
+            return redirect()->route('ddt-deposito.stampa', $ddtDeposito->id);
 
         } catch (\Exception $e) {
             session()->flash('error', 'Errore durante la generazione DDT: ' . $e->getMessage());
@@ -297,15 +576,15 @@ class GestisciContoDeposito extends Component
             $movimentiReso = $service->gestisciResoScadenza($this->deposito);
             
             // Poi genera il DDT
-            $ddt = $service->generaDdtReso($this->deposito);
+            $ddtDeposito = $service->generaDdtReso($this->deposito);
             
             // Aggiorna deposito
             $this->deposito->refresh();
 
-            session()->flash('success', "DDT di reso {$ddt->numero} generato per {$movimentiReso->count()} articoli");
+            session()->flash('success', "DDT di reso {$ddtDeposito->numero} generato per {$movimentiReso->count()} articoli");
             
-            // Redirect alla stampa DDT
-            return redirect()->route('ddt.stampa', $ddt->id);
+            // Redirect alla stampa DDT Deposito
+            return redirect()->route('ddt-deposito.stampa', $ddtDeposito->id);
 
         } catch (\Exception $e) {
             session()->flash('error', 'Errore durante la generazione DDT reso: ' . $e->getMessage());
@@ -333,11 +612,15 @@ class GestisciContoDeposito extends Component
 
     public function render()
     {
+        
         return view('livewire.gestisci-conto-deposito', [
             'articoliDisponibili' => $this->articoliDisponibili,
             'prodottiFinitiDisponibili' => $this->prodottiFinitiDisponibili,
             'articoliInDeposito' => $this->articoliInDeposito,
             'prodottiFinitiInDeposito' => $this->prodottiFinitiInDeposito,
+            // Variabili per vendita multipla
+            'articoliSelezionatiVendita' => $this->articoliSelezionatiVendita,
+            'prodottiFinitiSelezionatiVendita' => $this->prodottiFinitiSelezionatiVendita,
         ]);
     }
 }

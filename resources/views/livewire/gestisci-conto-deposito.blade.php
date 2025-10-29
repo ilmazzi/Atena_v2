@@ -82,7 +82,7 @@
                             
                             @if($deposito->ddt_invio_id)
                                 <p><strong>DDT Invio:</strong> 
-                                    <a href="{{ route('ddt.stampa', $deposito->ddt_invio_id) }}" class="text-primary" target="_blank">
+                                    <a href="{{ route('ddt-deposito.stampa', $deposito->ddt_invio_id) }}" class="text-primary" target="_blank">
                                         {{ $deposito->ddtInvio->numero ?? 'N/A' }}
                                     </a>
                                 </p>
@@ -138,12 +138,139 @@
         </div>
     </div>
 
+    {{-- Sezione DDT del Deposito --}}
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <iconify-icon icon="solar:document-bold-duotone" class="me-2"></iconify-icon>
+                        DDT Deposito
+                    </h5>
+                    <p class="text-muted mb-0 small">Documenti di trasporto collegati al deposito</p>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        {{-- DDT Invio --}}
+                        @if($deposito->ddt_invio_id)
+                            <div class="col-md-4">
+                                <div class="card border-primary">
+                                    <div class="card-body text-center">
+                                        <iconify-icon icon="solar:export-bold" class="fs-1 text-primary mb-2"></iconify-icon>
+                                        <h6 class="card-title">DDT Invio</h6>
+                                        <p class="card-text">
+                                            <strong>{{ $deposito->ddtInvio->numero ?? 'N/A' }}</strong><br>
+                                            <small class="text-muted">{{ $deposito->ddtInvio->data_documento->format('d/m/Y') ?? 'N/A' }}</small>
+                                        </p>
+                                        <div class="btn-group" role="group">
+                                            <a href="{{ route('ddt-deposito.stampa', $deposito->ddt_invio_id) }}" 
+                                               class="btn btn-primary btn-sm" 
+                                               target="_blank">
+                                                <iconify-icon icon="solar:printer-bold" class="me-1"></iconify-icon>
+                                                Stampa
+                                            </a>
+                                            <a href="{{ route('ddt-deposito.show', $deposito->ddt_invio_id) }}" 
+                                               class="btn btn-outline-primary btn-sm" 
+                                               target="_blank">
+                                                <iconify-icon icon="solar:eye-bold" class="me-1"></iconify-icon>
+                                                Dettagli
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        @endif
+                        
+                        {{-- DDT Reso --}}
+                        @if($deposito->ddt_reso_id)
+                            <div class="col-md-4">
+                                <div class="card border-warning">
+                                    <div class="card-body text-center">
+                                        <iconify-icon icon="solar:import-bold" class="fs-1 text-warning mb-2"></iconify-icon>
+                                        <h6 class="card-title">DDT Reso</h6>
+                                        <p class="card-text">
+                                            <strong>{{ $deposito->ddtReso->numero ?? 'N/A' }}</strong><br>
+                                            <small class="text-muted">{{ $deposito->ddtReso->data_documento->format('d/m/Y') ?? 'N/A' }}</small>
+                                        </p>
+                                        <div class="btn-group" role="group">
+                                            <a href="{{ route('ddt-deposito.stampa', $deposito->ddt_reso_id) }}" 
+                                               class="btn btn-warning btn-sm" 
+                                               target="_blank">
+                                                <iconify-icon icon="solar:printer-bold" class="me-1"></iconify-icon>
+                                                Stampa
+                                            </a>
+                                            <a href="{{ route('ddt-deposito.show', $deposito->ddt_reso_id) }}" 
+                                               class="btn btn-outline-warning btn-sm" 
+                                               target="_blank">
+                                                <iconify-icon icon="solar:eye-bold" class="me-1"></iconify-icon>
+                                                Dettagli
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        @endif
+                        
+                        {{-- DDT Rimando --}}
+                        @if($deposito->ddt_rimando_id)
+                            <div class="col-md-4">
+                                <div class="card border-success">
+                                    <div class="card-body text-center">
+                                        <iconify-icon icon="solar:refresh-bold" class="fs-1 text-success mb-2"></iconify-icon>
+                                        <h6 class="card-title">DDT Rimando</h6>
+                                        <p class="card-text">
+                                            <strong>{{ $deposito->ddtRimando->numero ?? 'N/A' }}</strong><br>
+                                            <small class="text-muted">{{ $deposito->ddtRimando->data_documento->format('d/m/Y') ?? 'N/A' }}</small>
+                                        </p>
+                                        <div class="btn-group" role="group">
+                                            <a href="{{ route('ddt-deposito.stampa', $deposito->ddt_rimando_id) }}" 
+                                               class="btn btn-success btn-sm" 
+                                               target="_blank">
+                                                <iconify-icon icon="solar:printer-bold" class="me-1"></iconify-icon>
+                                                Stampa
+                                            </a>
+                                            <a href="{{ route('ddt-deposito.show', $deposito->ddt_rimando_id) }}" 
+                                               class="btn btn-outline-success btn-sm" 
+                                               target="_blank">
+                                                <iconify-icon icon="solar:eye-bold" class="me-1"></iconify-icon>
+                                                Dettagli
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        @endif
+                        
+                        {{-- Placeholder se non ci sono DDT --}}
+                        @if(!$deposito->ddt_invio_id && !$deposito->ddt_reso_id && !$deposito->ddt_rimando_id)
+                            <div class="col-12">
+                                <div class="text-center py-4">
+                                    <iconify-icon icon="solar:document-bold" class="fs-1 text-muted mb-2"></iconify-icon>
+                                    <p class="text-muted mb-0">Nessun DDT ancora generato per questo deposito</p>
+                                </div>
+                            </div>
+                        @endif
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     {{-- Articoli in Deposito --}}
     <div class="row">
         <div class="col-12">
             <div class="card">
-                <div class="card-header">
+                <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="card-title mb-0">Articoli in Deposito</h5>
+                    @if($deposito->stato === 'attivo' && ($articoliInDeposito->count() > 0 || $prodottiFinitiInDeposito->count() > 0))
+                        <button class="btn btn-success btn-sm" wire:click="apriVenditaMultiplaModal">
+                            <iconify-icon icon="solar:cart-check-bold" class="me-1"></iconify-icon>
+                            Vendita Multipla
+                            @if($this->getTotaleSelezionatiVendita() > 0)
+                                <span class="badge bg-light text-success ms-1">{{ $this->getTotaleSelezionatiVendita() }}</span>
+                            @endif
+                        </button>
+                    @endif
                 </div>
                 <div class="card-body">
                     @if($articoliInDeposito->count() > 0 || $prodottiFinitiInDeposito->count() > 0)
@@ -151,6 +278,11 @@
                             <table class="table table-hover align-middle">
                                 <thead class="table-light">
                                     <tr>
+                                        @if($deposito->stato === 'attivo')
+                                            <th width="30">
+                                                <iconify-icon icon="solar:check-circle-bold" class="text-muted" title="Seleziona per vendita multipla"></iconify-icon>
+                                            </th>
+                                        @endif
                                         <th>Tipo</th>
                                         <th>Codice</th>
                                         <th>Descrizione</th>
@@ -164,6 +296,14 @@
                                     {{-- Articoli --}}
                                     @foreach($articoliInDeposito as $articoloData)
                                         <tr>
+                                            @if($deposito->stato === 'attivo')
+                                                <td class="text-center">
+                                                    <input type="checkbox" 
+                                                           class="form-check-input" 
+                                                           wire:click="toggleArticoloVendita({{ $articoloData['articolo']->id }})"
+                                                           @if($this->isArticoloSelezionatoVendita($articoloData['articolo']->id)) checked @endif>
+                                                </td>
+                                            @endif
                                             <td>
                                                 <span class="badge bg-light-primary text-primary">Articolo</span>
                                             </td>
@@ -189,6 +329,16 @@
                                     {{-- Prodotti Finiti --}}
                                     @foreach($prodottiFinitiInDeposito as $pfData)
                                         <tr>
+                                            @if($deposito->stato === 'attivo')
+                                                <td class="text-center">
+                                                    <input type="checkbox" 
+                                                           class="form-check-input" 
+                                                           wire:click="toggleProdottoFinitoVendita({{ $pfData['prodotto_finito']->id }})"
+                                                           @if($this->isProdottoFinitoSelezionatoVendita($pfData['prodotto_finito']->id)) checked @endif
+                                                           onchange="console.log('Checkbox clicked for PF ID: {{ $pfData['prodotto_finito']->id }}')"
+                                                           onclick="console.log('Checkbox onclick for PF ID: {{ $pfData['prodotto_finito']->id }}')">
+                                                </td>
+                                            @endif
                                             <td>
                                                 <span class="badge bg-light-warning text-warning">PF</span>
                                             </td>
@@ -200,15 +350,92 @@
                                             <td>€{{ number_format($pfData['costo_unitario'], 2, ',', '.') }}</td>
                                             <td>€{{ number_format($pfData['costo_unitario'], 2, ',', '.') }}</td>
                                             <td class="text-center">
-                                                @if($deposito->stato === 'attivo')
-                                                    <button class="btn btn-success btn-sm" 
-                                                            wire:click="apriRegistraVenditaModal('prodotto_finito', {{ $pfData['prodotto_finito']->id }})"
-                                                            title="Registra vendita">
-                                                        <iconify-icon icon="solar:cart-check-bold"></iconify-icon>
-                                                    </button>
-                                                @endif
+                                                <div class="btn-group" role="group">
+                                                    @if($pfData['componenti']->count() > 0)
+                                                        <button class="btn btn-outline-info btn-sm" 
+                                                                type="button" 
+                                                                data-bs-toggle="collapse" 
+                                                                data-bs-target="#componenti-{{ $pfData['prodotto_finito']->id }}" 
+                                                                title="Vedi componenti">
+                                                            <iconify-icon icon="solar:list-bold"></iconify-icon>
+                                                            <small>{{ $pfData['componenti']->count() }}</small>
+                                                        </button>
+                                                    @endif
+                                                    @if($deposito->stato === 'attivo')
+                                                        <button class="btn btn-success btn-sm" 
+                                                                wire:click="apriRegistraVenditaModal('prodotto_finito', {{ $pfData['prodotto_finito']->id }})"
+                                                                title="Registra vendita">
+                                                            <iconify-icon icon="solar:cart-check-bold"></iconify-icon>
+                                                        </button>
+                                                    @endif
+                                                </div>
                                             </td>
                                         </tr>
+                                        
+                                        {{-- Riga espandibile con componenti --}}
+                                        @if($pfData['componenti']->count() > 0)
+                                            <tr class="collapse" id="componenti-{{ $pfData['prodotto_finito']->id }}">
+                                                <td colspan="{{ $deposito->stato === 'attivo' ? '8' : '7' }}" class="p-0 border-0">
+                                                    <div class="bg-light-warning p-3 mx-3 mb-2 rounded">
+                                                        <h6 class="text-warning mb-2">
+                                                            <iconify-icon icon="solar:settings-bold" class="me-1"></iconify-icon>
+                                                            Componenti del prodotto finito {{ $pfData['prodotto_finito']->codice }}
+                                                        </h6>
+                                                        <div class="table-responsive">
+                                                            <table class="table table-sm mb-0">
+                                                                <thead class="table-light">
+                                                                    <tr>
+                                                                        <th>Codice Articolo</th>
+                                                                        <th>Descrizione</th>
+                                                                        <th>Categoria</th>
+                                                                        <th class="text-center">Q.tà</th>
+                                                                        <th class="text-end">Costo Unit.</th>
+                                                                        <th class="text-end">Costo Tot.</th>
+                                                                        <th class="text-center">Stato</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    @foreach($pfData['componenti'] as $componente)
+                                                                        <tr>
+                                                                            <td>
+                                                                                <span class="fw-bold text-primary">{{ $componente['articolo']->codice }}</span>
+                                                                            </td>
+                                                                            <td>{{ Str::limit($componente['articolo']->descrizione, 30) }}</td>
+                                                                            <td>
+                                                                                <span class="badge bg-light-info text-info">
+                                                                                    {{ $componente['articolo']->categoriaMerceologica->nome ?? 'N/A' }}
+                                                                                </span>
+                                                                            </td>
+                                                                            <td class="text-center">{{ $componente['quantita'] }}</td>
+                                                                            <td class="text-end">€{{ number_format($componente['costo_unitario'], 2, ',', '.') }}</td>
+                                                                            <td class="text-end">€{{ number_format($componente['costo_totale'], 2, ',', '.') }}</td>
+                                                                            <td class="text-center">
+                                                                                <span class="badge bg-light-{{ $componente['stato'] === 'utilizzato' ? 'success' : 'secondary' }} text-{{ $componente['stato'] === 'utilizzato' ? 'success' : 'secondary' }}">
+                                                                                    {{ ucfirst($componente['stato']) }}
+                                                                                </span>
+                                                                            </td>
+                                                                        </tr>
+                                                                    @endforeach
+                                                                </tbody>
+                                                                <tfoot class="table-light">
+                                                                    <tr>
+                                                                        <th colspan="5" class="text-end">Totale Componenti:</th>
+                                                                        <th class="text-end">€{{ number_format($pfData['componenti']->sum('costo_totale'), 2, ',', '.') }}</th>
+                                                                        <th></th>
+                                                                    </tr>
+                                                                </tfoot>
+                                                            </table>
+                                                        </div>
+                                                        <div class="mt-2">
+                                                            <small class="text-muted">
+                                                                <iconify-icon icon="solar:info-circle-bold" class="me-1"></iconify-icon>
+                                                                Questi articoli sono stati utilizzati per creare il prodotto finito {{ $pfData['prodotto_finito']->codice }}
+                                                            </small>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        @endif
                                     @endforeach
                                 </tbody>
                             </table>
@@ -439,6 +666,203 @@
                         <button type="button" class="btn btn-success" wire:click="registraVendita">
                             <iconify-icon icon="solar:cart-check-bold" class="me-1"></iconify-icon>
                             Registra Vendita
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-backdrop fade show"></div>
+    @endif
+
+    {{-- Modal Vendita Multipla --}}
+    @if($showVenditaMultiplaModal)
+        <div class="modal fade show" style="display: block;" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            <iconify-icon icon="solar:cart-check-bold-duotone" class="me-2"></iconify-icon>
+                            Vendita Multipla con Fattura
+                        </h5>
+                        <button type="button" wire:click="chiudiVenditaMultiplaModal" class="btn-close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row">
+                            {{-- Colonna sinistra: Dati Fattura --}}
+                            <div class="col-md-6">
+                                <h6 class="fw-bold text-primary mb-3">
+                                    <iconify-icon icon="solar:document-text-bold" class="me-1"></iconify-icon>
+                                    Dati Fattura
+                                </h6>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Numero Fattura *</label>
+                                    <input type="text" class="form-control @error('numeroFattura') is-invalid @enderror" 
+                                           wire:model="numeroFattura" 
+                                           placeholder="es. FT-2024-001">
+                                    @error('numeroFattura')
+                                        <div class="invalid-feedback">{{ $message }}</div>
+                                    @enderror
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Data Fattura *</label>
+                                    <input type="date" class="form-control @error('dataFattura') is-invalid @enderror" 
+                                           wire:model="dataFattura">
+                                    @error('dataFattura')
+                                        <div class="invalid-feedback">{{ $message }}</div>
+                                    @enderror
+                                </div>
+                                
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label class="form-label fw-semibold">Nome Cliente *</label>
+                                            <input type="text" class="form-control @error('clienteNome') is-invalid @enderror" 
+                                                   wire:model="clienteNome">
+                                            @error('clienteNome')
+                                                <div class="invalid-feedback">{{ $message }}</div>
+                                            @enderror
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label class="form-label fw-semibold">Cognome Cliente *</label>
+                                            <input type="text" class="form-control @error('clienteCognome') is-invalid @enderror" 
+                                                   wire:model="clienteCognome">
+                                            @error('clienteCognome')
+                                                <div class="invalid-feedback">{{ $message }}</div>
+                                            @enderror
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Telefono Cliente</label>
+                                    <input type="text" class="form-control @error('clienteTelefono') is-invalid @enderror" 
+                                           wire:model="clienteTelefono">
+                                    @error('clienteTelefono')
+                                        <div class="invalid-feedback">{{ $message }}</div>
+                                    @enderror
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Email Cliente</label>
+                                    <input type="email" class="form-control @error('clienteEmail') is-invalid @enderror" 
+                                           wire:model="clienteEmail">
+                                    @error('clienteEmail')
+                                        <div class="invalid-feedback">{{ $message }}</div>
+                                    @enderror
+                                </div>
+                            </div>
+                            
+                            {{-- Colonna destra: Articoli Selezionati --}}
+                            <div class="col-md-6">
+                                <h6 class="fw-bold text-success mb-3" wire:key="selection-header-{{ $this->getTotaleSelezionatiVendita() }}">
+                                    <iconify-icon icon="solar:bag-check-bold" class="me-1"></iconify-icon>
+                                    Articoli Selezionati ({{ $this->getTotaleSelezionatiVendita() }})
+                                </h6>
+                                
+                                @if(empty($articoliSelezionatiVendita) && empty($prodottiFinitiSelezionatiVendita))
+                                    <div class="alert alert-info text-center">
+                                        <iconify-icon icon="solar:info-circle-bold" class="me-2"></iconify-icon>
+                                        Nessun articolo selezionato.<br>
+                                        <small>Usa le checkbox nella tabella per selezionare articoli da vendere.</small>
+                                    </div>
+                                @else
+                                    <div class="mb-3" style="max-height: 300px; overflow-y: auto;">
+                                        {{-- Articoli selezionati --}}
+                                        @foreach($articoliSelezionatiVendita as $articoloId => $articoloData)
+                                            <div class="card mb-2">
+                                                <div class="card-body p-2">
+                                                    <div class="d-flex justify-content-between align-items-center">
+                                                        <div>
+                                                            <span class="badge bg-light-primary text-primary me-1">ART</span>
+                                                            <strong>{{ $articoloData['codice'] }}</strong>
+                                                            <br><small class="text-muted">{{ Str::limit($articoloData['descrizione'], 30) }}</small>
+                                                        </div>
+                                                        <div class="text-end">
+                                                            <input type="number" 
+                                                                   class="form-control form-control-sm" 
+                                                                   style="width: 70px; display: inline-block;"
+                                                                   wire:model="articoliSelezionatiVendita.{{ $articoloId }}.quantita"
+                                                                   min="1" 
+                                                                   max="{{ $articoloData['max_quantita'] }}">
+                                                            <br><small class="text-muted">Max: {{ $articoloData['max_quantita'] }}</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        @endforeach
+                                        
+                                        {{-- Prodotti finiti selezionati --}}
+                                        @foreach($prodottiFinitiSelezionatiVendita as $pfId => $pfData)
+                                            <div class="card mb-2">
+                                                <div class="card-body p-2">
+                                                    <div class="d-flex justify-content-between align-items-center">
+                                                        <div>
+                                                            <span class="badge bg-light-warning text-warning me-1">PF</span>
+                                                            <strong>{{ $pfData['codice'] }}</strong>
+                                                            <br><small class="text-muted">{{ Str::limit($pfData['descrizione'], 30) }}</small>
+                                                        </div>
+                                                        <div class="text-end">
+                                                            <span class="badge bg-light-success text-success">Q.tà: 1</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                @endif
+                            </div>
+                        </div>
+                        
+                        {{-- Importo Totale --}}
+                        <div class="row mt-3">
+                            <div class="col-12">
+                                <div class="alert alert-primary d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <h6 class="mb-0">
+                                            <iconify-icon icon="solar:calculator-bold" class="me-2"></iconify-icon>
+                                            Importo Totale Fattura
+                                        </h6>
+                                        <small class="text-muted">Calcolato automaticamente dai costi unitari</small>
+                                    </div>
+                                    <div>
+                                        <span class="h4 mb-0 text-primary">€{{ number_format($importoTotaleFattura, 2, ',', '.') }}</span>
+                                        <input type="hidden" wire:model="importoTotaleFattura">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {{-- Note --}}
+                        <div class="row">
+                            <div class="col-12">
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Note Fattura</label>
+                                    <textarea class="form-control @error('noteFattura') is-invalid @enderror" 
+                                              wire:model="noteFattura" 
+                                              rows="2" 
+                                              placeholder="Note aggiuntive per la fattura..."></textarea>
+                                    @error('noteFattura')
+                                        <div class="invalid-feedback">{{ $message }}</div>
+                                    @enderror
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" wire:click="chiudiVenditaMultiplaModal">
+                            <iconify-icon icon="solar:close-circle-bold" class="me-1"></iconify-icon>
+                            Annulla
+                        </button>
+                        <button type="button" 
+                                class="btn btn-success" 
+                                wire:click="registraVenditaMultipla"
+                                @if(empty($articoliSelezionatiVendita) && empty($prodottiFinitiSelezionatiVendita)) disabled @endif>
+                            <iconify-icon icon="solar:cart-check-bold" class="me-1"></iconify-icon>
+                            Registra Vendita Multipla
                         </button>
                     </div>
                 </div>

@@ -223,10 +223,19 @@
                                 </td>
                                 <td class="text-center">
                                     <div class="btn-group" role="group">
+                                        {{-- Tasto Gestisci (principale) --}}
+                                        <a href="{{ route('conti-deposito.gestisci', $deposito->id) }}" 
+                                           class="btn btn-primary btn-sm"
+                                           title="Gestisci deposito">
+                                            <iconify-icon icon="solar:settings-bold" class="me-1"></iconify-icon>
+                                            Gestisci
+                                        </a>
+                                        
+                                        {{-- Tasto Dettagli --}}
                                         <button class="btn btn-light btn-sm" 
                                                 wire:click="apriDettaglioModal({{ $deposito->id }})"
                                                 title="Visualizza dettagli">
-                                            <iconify-icon icon="solar:eye-bold" class="text-primary"></iconify-icon>
+                                            <iconify-icon icon="solar:eye-bold" class="text-info"></iconify-icon>
                                         </button>
                                         
                                         @if($deposito->stato === 'attivo' && $deposito->isScaduto())
@@ -241,7 +250,7 @@
                                             <button class="btn btn-light btn-sm" 
                                                     wire:click="creaRimando({{ $deposito->id }})"
                                                     title="Rimanda in deposito">
-                                                <iconify-icon icon="solar:refresh-bold" class="text-info"></iconify-icon>
+                                                <iconify-icon icon="solar:refresh-bold" class="text-success"></iconify-icon>
                                             </button>
                                         @endif
                                     </div>

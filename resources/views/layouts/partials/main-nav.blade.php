@@ -70,6 +70,15 @@
             </a>
         </li>
 
+        <li class="nav-item">
+            <a class="nav-link" href="{{ route('movimentazioni-interne.index') }}">
+                     <span class="nav-icon">
+                    <iconify-icon icon="solar:transfer-horizontal-bold-duotone"></iconify-icon>
+                     </span>
+                <span class="nav-text">Movimentazioni Interne</span>
+            </a>
+        </li>
+
             <li class="nav-item">
                 <a class="nav-link menu-arrow" href="#sidebarAcquisti" data-bs-toggle="collapse" role="button"
                    aria-expanded="false" aria-controls="sidebarAcquisti">

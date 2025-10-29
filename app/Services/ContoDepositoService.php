@@ -6,8 +6,8 @@ use App\Models\ContoDeposito;
 use App\Models\MovimentoDeposito;
 use App\Models\Articolo;
 use App\Models\ProdottoFinito;
-use App\Models\Ddt;
-use App\Models\DdtDettaglio;
+use App\Models\DdtDeposito;
+use App\Models\DdtDepositoDettaglio;
 use App\Models\Fattura;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -187,8 +187,45 @@ class ContoDepositoService
                     ]);
                 }
             } else {
+                // Vendita ProdottoFinito - scaricare componenti
+                \Log::info("🏆 Vendita PF ID {$item->id}: scarico componenti...");
+                
+                // Carica componenti con articoli
+                $item->load(['componentiArticoli.articolo']);
+                
+                // Scarica ogni componente dal deposito
+                foreach ($item->componentiArticoli as $componente) {
+                    $articoloComponente = $componente->articolo;
+                    $quantitaDaScaricare = $componente->quantita * $quantita; // quantità componente x quantità PF venduti
+                    
+                    \Log::info("📦 Scarico articolo {$articoloComponente->codice}: {$quantitaDaScaricare} unità");
+                    
+                    // Registra movimento di scarico per il componente
+                    MovimentoDeposito::creaVendita(
+                        $contoDeposito,
+                        $articoloComponente,
+                        $quantitaDaScaricare,
+                        $componente->costo_unitario,
+                        $fattura,
+                        "Scarico componente da vendita PF {$item->codice}"
+                    );
+                    
+                    // Aggiorna quantità in deposito del componente
+                    $articoloComponente->aggiornaQuantitaInDeposito();
+                    
+                    // Aggiorna giacenza se necessario
+                    if ($articoloComponente->giacenza) {
+                        $articoloComponente->giacenza->update([
+                            'quantita_residua' => max(0, $articoloComponente->giacenza->quantita_residua - $quantitaDaScaricare)
+                        ]);
+                    }
+                }
+                
+                // Marca il PF come venduto
                 $item->update(['stato' => 'venduto']);
                 $item->aggiornaStatoDeposito();
+                
+                \Log::info("✅ PF {$item->codice} venduto e componenti scaricati");
             }
 
             // Aggiorna statistiche deposito
@@ -364,10 +401,21 @@ class ContoDepositoService
 
         foreach ($movimentiInvio as $movimento) {
             if (!in_array($movimento->prodotto_finito_id, $movimentiVendita)) {
-                $prodottoFinito = ProdottoFinito::find($movimento->prodotto_finito_id);
+                $prodottoFinito = ProdottoFinito::with(['componentiArticoli.articolo.categoriaMerceologica'])
+                    ->find($movimento->prodotto_finito_id);
+                
                 $prodottiFinitiRimanenti->push([
                     'prodotto_finito' => $prodottoFinito,
-                    'costo_unitario' => $movimento->costo_unitario
+                    'costo_unitario' => $movimento->costo_unitario,
+                    'componenti' => $prodottoFinito->componentiArticoli->map(function ($componente) {
+                        return [
+                            'articolo' => $componente->articolo,
+                            'quantita' => $componente->quantita,
+                            'costo_unitario' => $componente->costo_unitario,
+                            'costo_totale' => $componente->costo_totale,
+                            'stato' => $componente->stato,
+                        ];
+                    })
                 ]);
             }
         }
@@ -378,17 +426,22 @@ class ContoDepositoService
     /**
      * Genera DDT di invio per il deposito
      */
-    public function generaDdtInvio(ContoDeposito $contoDeposito): Ddt
+    public function generaDdtInvio(ContoDeposito $contoDeposito): DdtDeposito
     {
         return DB::transaction(function () use ($contoDeposito) {
-            // Crea DDT
-            $ddt = Ddt::create([
-                'numero' => $this->generaNumeroDdt(),
+            // Crea DDT Deposito
+            $ddtDeposito = DdtDeposito::create([
+                'numero' => DdtDeposito::generaNumeroDdt(),
                 'data_documento' => $contoDeposito->data_invio,
                 'anno' => $contoDeposito->data_invio->year,
-                'fornitore_id' => null, // Non è un fornitore, è un trasferimento interno
-                'sede_id' => $contoDeposito->sede_mittente_id,
-                'tipo_documento' => 'trasferimento_deposito',
+                'conto_deposito_id' => $contoDeposito->id,
+                'tipo' => 'invio',
+                'sede_mittente_id' => $contoDeposito->sede_mittente_id,
+                'sede_destinataria_id' => $contoDeposito->sede_destinataria_id,
+                'stato' => 'creato',
+                'causale' => 'Conto deposito',
+                'valore_dichiarato' => $contoDeposito->valore_totale_invio,
+                'articoli_totali' => $contoDeposito->articoli_inviati,
                 'note' => "DDT invio conto deposito {$contoDeposito->codice}",
                 'creato_da' => auth()->id(),
             ]);
@@ -396,103 +449,106 @@ class ContoDepositoService
             // Aggiungi dettagli per ogni movimento di invio
             $movimentiInvio = $contoDeposito->movimenti()
                 ->where('tipo_movimento', 'invio')
+                ->with(['articolo', 'prodottoFinito'])
                 ->get();
 
             foreach ($movimentiInvio as $movimento) {
-                DdtDettaglio::create([
-                    'ddt_id' => $ddt->id,
+                $item = $movimento->getItem();
+                
+                DdtDepositoDettaglio::create([
+                    'ddt_deposito_id' => $ddtDeposito->id,
                     'articolo_id' => $movimento->articolo_id,
                     'prodotto_finito_id' => $movimento->prodotto_finito_id,
+                    'codice_item' => $item->codice,
+                    'descrizione' => $item->descrizione,
                     'quantita' => $movimento->quantita,
-                    'prezzo_unitario' => $movimento->costo_unitario,
-                    'totale' => $movimento->costo_totale,
-                    'descrizione' => $movimento->isArticolo() ? 
-                        $movimento->articolo->descrizione : 
-                        $movimento->prodottoFinito->descrizione,
+                    'valore_unitario' => $movimento->costo_unitario,
+                    'valore_totale' => $movimento->costo_totale,
                 ]);
-
-                // Aggiorna movimento con DDT
-                $movimento->update(['ddt_id' => $ddt->id]);
             }
 
             // Aggiorna deposito con DDT
-            $contoDeposito->update(['ddt_invio_id' => $ddt->id]);
+            $contoDeposito->update(['ddt_invio_id' => $ddtDeposito->id]);
 
-            return $ddt;
+            return $ddtDeposito;
         });
     }
 
     /**
      * Genera DDT di reso per il deposito
      */
-    public function generaDdtReso(ContoDeposito $contoDeposito): Ddt
+    public function generaDdtReso(ContoDeposito $contoDeposito): DdtDeposito
     {
         return DB::transaction(function () use ($contoDeposito) {
-            // Crea DDT
-            $ddt = Ddt::create([
-                'numero' => $this->generaNumeroDdt(),
+            // Crea DDT Deposito per reso
+            $ddtDeposito = DdtDeposito::create([
+                'numero' => DdtDeposito::generaNumeroDdt(),
                 'data_documento' => now()->toDateString(),
                 'anno' => now()->year,
-                'fornitore_id' => null,
-                'sede_id' => $contoDeposito->sede_destinataria_id,
-                'tipo_documento' => 'reso_deposito',
+                'conto_deposito_id' => $contoDeposito->id,
+                'tipo' => 'reso',
+                'sede_mittente_id' => $contoDeposito->sede_destinataria_id, // Ora il destinatario diventa mittente
+                'sede_destinataria_id' => $contoDeposito->sede_mittente_id, // E il mittente diventa destinatario
+                'stato' => 'creato',
+                'causale' => 'Reso conto deposito',
                 'note' => "DDT reso conto deposito {$contoDeposito->codice}",
                 'creato_da' => auth()->id(),
             ]);
 
+            $articoliTotali = 0;
+            $valoreTotale = 0;
+
             // Aggiungi dettagli per articoli rimanenti
             $articoliRimanenti = $this->getArticoliRimanentiInDeposito($contoDeposito);
             foreach ($articoliRimanenti as $articoloData) {
-                DdtDettaglio::create([
-                    'ddt_id' => $ddt->id,
+                $valoreTotaleRiga = $articoloData['quantita'] * $articoloData['costo_unitario'];
+                
+                DdtDepositoDettaglio::create([
+                    'ddt_deposito_id' => $ddtDeposito->id,
                     'articolo_id' => $articoloData['articolo']->id,
-                    'quantita' => $articoloData['quantita'],
-                    'prezzo_unitario' => $articoloData['costo_unitario'],
-                    'totale' => $articoloData['quantita'] * $articoloData['costo_unitario'],
+                    'codice_item' => $articoloData['articolo']->codice,
                     'descrizione' => $articoloData['articolo']->descrizione,
+                    'quantita' => $articoloData['quantita'],
+                    'valore_unitario' => $articoloData['costo_unitario'],
+                    'valore_totale' => $valoreTotaleRiga,
                 ]);
+                
+                $articoliTotali += $articoloData['quantita'];
+                $valoreTotale += $valoreTotaleRiga;
             }
 
             // Aggiungi dettagli per PF rimanenti
             $pfRimanenti = $this->getProdottiFinitiRimanentiInDeposito($contoDeposito);
             foreach ($pfRimanenti as $pfData) {
-                DdtDettaglio::create([
-                    'ddt_id' => $ddt->id,
+                DdtDepositoDettaglio::create([
+                    'ddt_deposito_id' => $ddtDeposito->id,
                     'prodotto_finito_id' => $pfData['prodotto_finito']->id,
-                    'quantita' => 1,
-                    'prezzo_unitario' => $pfData['costo_unitario'],
-                    'totale' => $pfData['costo_unitario'],
+                    'codice_item' => $pfData['prodotto_finito']->codice,
                     'descrizione' => $pfData['prodotto_finito']->descrizione,
+                    'quantita' => 1,
+                    'valore_unitario' => $pfData['costo_unitario'],
+                    'valore_totale' => $pfData['costo_unitario'],
                 ]);
+                
+                $articoliTotali += 1;
+                $valoreTotale += $pfData['costo_unitario'];
             }
 
-            // Aggiorna deposito con DDT reso
-            $contoDeposito->update(['ddt_reso_id' => $ddt->id]);
+            // Aggiorna totali nel DDT
+            $ddtDeposito->update([
+                'articoli_totali' => $articoliTotali,
+                'valore_dichiarato' => $valoreTotale,
+            ]);
 
-            return $ddt;
+            // Aggiorna deposito con DDT reso
+            $contoDeposito->update(['ddt_reso_id' => $ddtDeposito->id]);
+
+            return $ddtDeposito;
         });
     }
 
 
-    /**
-     * Genera numero DDT progressivo
-     */
-    private function generaNumeroDdt(): string
-    {
-        $anno = now()->year;
-        $ultimoNumero = Ddt::where('anno', $anno)
-            ->where('numero', 'like', "DEP-{$anno}-%")
-            ->orderBy('numero', 'desc')
-            ->value('numero');
-
-        if ($ultimoNumero) {
-            $numero = intval(substr($ultimoNumero, -4)) + 1;
-        } else {
-            $numero = 1;
-        }
-
-        return sprintf('DEP-%d-%04d', $anno, $numero);
-    }
+    // Metodo generaNumeroDdt() rimosso - ora è nel modello DdtDeposito
 
     /**
      * Ottieni statistiche depositi per dashboard

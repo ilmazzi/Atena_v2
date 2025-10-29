@@ -23,6 +23,7 @@ class Ddt extends Model
         'numero',
         'anno',
         'data_documento',
+        'tipo_documento', // Nuovo campo aggiunto
         'fornitore_id',
         'magazzino_id',
         'stato',
@@ -30,6 +31,7 @@ class Ddt extends Model
         'allegato_path',
         'note',
         'user_carico_id',
+        'caricato_da', // Campo per tracking utente
         'tipo_carico',
         'ocr_document_id',
         'sede_id',
